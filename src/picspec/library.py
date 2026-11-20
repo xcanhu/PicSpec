@@ -276,7 +276,9 @@ ENTRIES: tuple[Entry, ...] = (
              "0.22 到 0.61，同一张脸轻度改动后的 63 对里有 62 对高于 0.62。")),
     _e("same-outfit", "consistency", "composition",
        ("The same outfit and hairstyle as the reference", "服装和发型与参考图一致"),
-       ("Are the person's outfit and hairstyle the same as in the reference image?", "人物的服装和发型是否与参考图一致？"),
+       ("Are the person's outfit and hairstyle the same as in the reference image? Judge only what both images "
+        "show: a side of the outfit that the reference does not show is not a difference.",
+        "人物的服装和发型是否与参考图一致？只比较两张图都能看到的部分：参考图里看不到的一面（比如背面）不算不一致。"),
        when=_PERSON, ref=("refs/character.png", "the character's outfit and hairstyle", "角色的服装和发型")),
     _e("same-place", "consistency", "composition",
        ("The setting is the place shown in the reference: the same buildings and layout", "场景就是参考图里的地方：建筑和布局相同"),
@@ -375,6 +377,6 @@ TEMPLATES: dict[str, Template] = {
          "短剧单个镜头的竖屏关键帧。角色和场景必须与参考图一致。"),
         "864x1536",
         ("same-style", "same-light", "sharp-face", "same-face", "same-outfit", "same-place",
-         "bad-hands", "bad-limbs", "text"),
+         "bad-hands", "bad-limbs", "overlay-text"),
     ),
 }

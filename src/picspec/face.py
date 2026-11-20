@@ -42,17 +42,30 @@ class Face:
     score: float
     raw: Any = None  # the detector's own row, needed to align the face for comparison
 
+    def _eyes(self) -> tuple[float, float, float] | None:
+        if self.raw is None:
+            return None
+        eye_a, eye_b, nose = float(self.raw[4]), float(self.raw[6]), float(self.raw[8])
+        return min(eye_a, eye_b), max(eye_a, eye_b), nose
+
     @property
     def profile(self) -> bool:
-        """True when the head is turned so far that the face cannot be compared: the nose lies outside
-        the eyes, or the two eyes almost coincide."""
-        if self.raw is None:
+        """True when the head is turned so far that the face cannot be compared at all: the two eyes
+        are less than a quarter of the face width apart. In live runs side and back views measured
+        0.08 and 0.16, three-quarter views 0.36 to 0.40, frontal faces 0.45."""
+        eyes = self._eyes()
+        return eyes is not None and eyes[1] - eyes[0] < 0.25 * self.box[2]
+
+    @property
+    def turned(self) -> bool:
+        """True for a three-quarter view or more: the nose lies at or outside the eyes. Such a face can
+        match a reference taken from a similar angle, but a low score against a frontal reference
+        says little."""
+        eyes = self._eyes()
+        if eyes is None:
             return False
-        eye_a, eye_b, nose = float(self.raw[4]), float(self.raw[6]), float(self.raw[8])
-        low, high = min(eye_a, eye_b), max(eye_a, eye_b)
-        if high - low < 0.15 * self.box[2]:
-            return True
-        return not 0.1 <= (nose - low) / (high - low) <= 0.9
+        low, high, nose = eyes
+        return high - low <= 0 or not 0.1 <= (nose - low) / (high - low) <= 0.9
 
     @property
     def area(self) -> int:

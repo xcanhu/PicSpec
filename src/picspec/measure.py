@@ -61,13 +61,14 @@ def _range(low: float | None, high: float | None) -> str:
     return f">= {low:g}" if low is not None else f"<= {high:g}"
 
 
-def _face_match(image: Image.Image, rule: Rule, spec: Spec, faces: Any) -> tuple[float, str] | str | None:
-    """(best similarity, reference path), a reason why nothing can be compared, or ``None`` to ask the judge."""
+def _face_match(image: Image.Image, rule: Rule, spec: Spec, faces: Any) -> tuple[float, str, bool] | str | None:
+    """(best similarity, reference path, head turned), a reason why nothing can be compared, or ``None`` to ask the judge."""
     found = faces.detect(image)
     if not found:
         return "no-face"
     if all(getattr(f, "profile", False) for f in found):
         return "turned"
+    turned = all(getattr(f, "turned", False) for f in found)
     best: tuple[float, str] | None = None  # several references (front, three-quarter view...): the closest counts
     for ref in rule.refs:
         try:
@@ -76,15 +77,18 @@ def _face_match(image: Image.Image, rule: Rule, spec: Spec, faces: Any) -> tuple
             continue
         if score is not None and (best is None or score > best[0]):
             best = (score, ref.path)
-    return best
+    return (best[0], best[1], turned) if best else None
 
 
 _WORDS = {
     "en": {"no-face": "no face was found to measure", "turned": "the face is turned too far to compare",
+           "turned-low": "the head is turned and no reference shows that angle (closest: {v:.2f} against {ref}); "
+                         "add a three-quarter view as a second reference",
            "face-match": "face similarity {v:.2f} against {ref}; allowed {r}",
            "face-share": "the face is {v:.0%} of the image height; allowed {r}",
            "grain": "grain level {v:.1f}; allowed {r}"},
     "zh": {"no-face": "没有找到可测量的人脸", "turned": "脸转得太偏，无法比对",
+           "turned-low": "头转得较偏，而没有这个角度的参考图（最接近：与 {ref} 的相似度 {v:.2f}）；可以再加一张四分之三侧的参考图",
            "face-match": "与 {ref} 的人脸相似度为 {v:.2f}；允许范围 {r}",
            "face-share": "脸占图高的 {v:.0%}；允许范围 {r}",
            "grain": "颗粒强度 {v:.1f}；允许范围 {r}"},
@@ -115,7 +119,10 @@ def evaluate(image: Image.Image, rule: Rule, spec: Spec, faces: Any) -> tuple[st
                 return None
             if isinstance(got, str):
                 return ("na" if rule.when else ("no" if rule.expect else "yes")), words[got], name
-            value, ref = got
+            value, ref, turned = got
+            if turned and low is not None and value < low and rule.expect:
+                # a three-quarter view only matches a reference from a similar angle: a low score proves nothing
+                return "na", words["turned-low"].format(v=value, ref=ref), name
     except Exception:  # a tool failure must not stop the check
         return None
     ok = _inside(value, low, high)

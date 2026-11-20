@@ -362,6 +362,20 @@ def test_turned_faces_are_not_compared_and_the_closest_reference_counts(tmp_path
     assert best.status == PASS and "0.70 against side.png" in best.seen
 
 
+    # a three-quarter view (landmarks from a live shot): compared, and a low score is "cannot tell", not a failure
+    row = [307, 388, 126, 180, 318.8, 455.6, 366.7, 460.5, 316.6, 494.6, 319.7, 524.1, 364.3, 527.8, 0.9]
+    quarter = Face((307, 388, 126, 180), 0.9, row)
+    assert quarter.turned and not quarter.profile
+
+    class ThreeQuarter(FakeFaces):
+        def detect(self, image):
+            return [quarter]
+
+    low = check_image(IMG, spec, FakeJudge({"g": "yes"}), faces=ThreeQuarter(score=0.4)).verdicts[0]
+    assert low.status == NOT_APPLICABLE and "three-quarter" in low.seen
+    assert check_image(IMG, spec, FakeJudge({"g": "yes"}), faces=ThreeQuarter(score=0.63)).verdicts[0].status == PASS
+
+
 def test_one_reference_file_is_sent_once(tmp_path):
     from picspec import load
     from picspec.backends.base import pick_references
