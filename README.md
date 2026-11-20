@@ -29,7 +29,19 @@ Natural-light documentary portraits with the look of 35mm film.
   - expect: no
 ```
 
-> **Status: v0.2, early.** Working today: the spec format, the gpt-image-2 and ComfyUI adapters, checking each rule on the result with a vision model, and retrying with the failed rules stressed. Learning rules from your feedback is next: see the [roadmap](#roadmap). Everything is tested against local stand-ins for the model APIs. It has not yet been run against a live image model or a live vision model, so there are no result numbers or comparison images yet.
+> **Status: v0.2, early.** Working today: the spec format, the gpt-image-2 and ComfyUI adapters, checking each rule on the result with a vision model, and retrying with the failed rules stressed. Learning rules from your feedback is next: see the [roadmap](#roadmap).
+
+## First live result
+
+One prompt, one run, so read this as a smoke test and not as a benchmark. With the starter spec (7 rules), gpt-image-2 at 1024x1536 and the first judge model as the judge, for the prompt "a young woman with an umbrella in an alley after rain" (given in Chinese):
+
+| Image | Rules met | Not met |
+| --- | --- | --- |
+| Bare prompt | 3 of 7 | film grain, waist-up framing, no text in frame, side-back light |
+| With the spec, round 1 | 6 of 7 | waist-up framing |
+| With the spec, round 2 (framing stressed) | 5 of 7 | waist-up framing, side-back light |
+
+A person looking at the images agreed with the judge on all 14 verdicts for the first two rows. Each image took about 53 seconds including its check. What it also shows: stressing a failed rule in the prompt did not fix the framing, which is why repairing the best image by editing it is next on the roadmap. The ComfyUI adapter has not been run against a live server yet.
 
 ## Install
 

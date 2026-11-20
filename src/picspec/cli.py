@@ -243,23 +243,31 @@ def cmd_generate(args: argparse.Namespace) -> int:
         if report is not None:
             entry.update(ok=report.ok, checks=report.to_json())
         record["images"].append(entry)
-        print(f"{out / filename}  ({label}{': ' + _tally(report) if report is not None else ''})")
+        took = f", {extra['seconds']}s" if "seconds" in extra else ""
+        print(f"{out / filename}  ({label}{': ' + _tally(report) if report is not None else ''}{took})", flush=True)
 
     exit_code = 0
     try:
         if args.baseline:
+            started = time.monotonic()
             result = backend.generate(bare_request(args.prompt, size=first.size, quality=first.quality, seed=seed))
             report = check_image(result.image, spec, judge, only=first.rule_ids,
                                  one_by_one=args.one_by_one) if judge else None
-            save(result, "baseline.png", "baseline", seed, report)
+            save(result, "baseline.png", "baseline", seed, report, seconds=round(time.monotonic() - started, 1))
         if judge is None:
             for i in range(args.count):
-                save(backend.generate(_request(args, spec, seed + i)), f"image-{i + 1}.png", "picspec", seed + i)
+                started = time.monotonic()
+                result = backend.generate(_request(args, spec, seed + i))
+                save(result, f"image-{i + 1}.png", "picspec", seed + i, seconds=round(time.monotonic() - started, 1))
         else:
+            clock = [time.monotonic()]
+
             def on_attempt(a: Attempt) -> None:
                 n = sum(1 for e in record["images"] if e.get("round") == a.round) + 1
+                now = time.monotonic()
                 save(a.result, f"round{a.round}-{n}.png", "picspec", a.seed, a.report,
-                     round=a.round, stressed=a.stressed)
+                     round=a.round, stressed=a.stressed, seconds=round(now - clock[0], 1))
+                clock[0] = now
 
             outcome = generate_checked(
                 spec, args.prompt, backend, judge, rounds=args.rounds or 3, candidates=args.count, seed=seed,
