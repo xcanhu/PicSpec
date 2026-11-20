@@ -130,3 +130,15 @@ def test_cli_audit(tmp_path, monkeypatch, capsys):
     data = json.loads((tmp_path / "out" / "audit.json").read_text(encoding="utf-8"))
     assert data["judge"] == "oracle" and len(data["trials"]) == 8
     assert (tmp_path / "out" / "a.grain-25.png").is_file() and (tmp_path / "out" / "a.flip-1.png").is_file()
+
+
+def test_cli_audit_keeps_same_named_files_apart(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "PICSPEC.md").write_text(SPEC, encoding="utf-8")
+    for folder in ("run1", "run2"):
+        (tmp_path / folder).mkdir()
+        picture().save(tmp_path / folder / "a.png")
+    monkeypatch.setattr("picspec.cli.make_judge", lambda *a: Oracle())
+    assert main(["audit", "run1/a.png", "run2/a.png", "--probe", "text=f2", "--json"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert [t["image"] for t in data["trials"]] == ["a", "run2-a"]

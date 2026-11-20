@@ -217,7 +217,10 @@ def cmd_audit(args: argparse.Namespace) -> int:
     for name in args.images:
         try:
             with Image.open(name) as im:
-                images[Path(name).stem] = im.convert("RGB")
+                key = Path(name).stem
+                if key in images:  # same file name in two folders: keep both apart
+                    key = "-".join(Path(name).with_suffix("").parts[-2:])
+                images[key] = im.convert("RGB")
         except OSError as e:
             raise UserError(f"{name}: {e}") from e
     out = Path(args.out) if args.out else None
