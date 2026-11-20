@@ -15,13 +15,8 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 from .judge import check_image
 from .llm import ChatModel
+from .measure import add_grain  # noqa: F401  (re-exported for callers of audit.add_grain)
 from .spec import Spec
-
-
-def add_grain(image: Image.Image, sigma: float) -> Image.Image:
-    """Add zero-mean luminance noise with the given standard deviation (0-255 scale)."""
-    noise = Image.effect_noise(image.size, sigma).convert("RGB")
-    return ImageChops.add(image.convert("RGB"), noise, 1, -128)
 
 
 def add_text(image: Image.Image, text: str = "SAMPLE 2026") -> Image.Image:

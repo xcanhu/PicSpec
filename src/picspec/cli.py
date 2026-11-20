@@ -83,7 +83,7 @@ def _request(args: argparse.Namespace, spec: Spec, seed: int = 0) -> Request:
 
 
 def _judge(args: argparse.Namespace, spec: Spec) -> OpenAIChat:
-    if any(r.measurement for r in spec.rules) and face.shared() is None:
+    if any(r.measurement and r.measurement[0].startswith("face") for r in spec.rules) and face.shared() is None:
         print(f"note: rules with a measure will be left to the judge, because the face tools are not available "
               f"({face.why_missing()})", file=sys.stderr)
     try:
@@ -374,7 +374,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
         record["images"].append(entry)
         took = f", {extra['seconds']}s" if "seconds" in extra else ""
         if "edited_from" in extra:
-            label = f"edit of {extra['edited_from']}"
+            label = f"{'fixed in code from' if extra.get('method') == 'fix' else 'edit of'} {extra['edited_from']}"
         print(f"{out / filename}  ({label}{': ' + _tally(report) if report is not None else ''}{took})", flush=True)
 
     exit_code = 0

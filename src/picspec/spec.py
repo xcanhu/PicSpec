@@ -53,8 +53,14 @@ _FIELDS: dict[str, tuple[str, ...]] = {
     "measure": ("measure", "测量"),
 }
 # Checks done by a tool instead of the vision judge: name -> default threshold.
-MEASURES: dict[str, float] = {"face-match": 0.6}
-_MEASURE = re.compile(r"^([a-z][a-z-]*)\s*(?:(?:>=|≥)\s*(-?\d+(?:\.\d+)?))?$")
+# Checks done by a tool instead of the vision judge: name -> default (lowest, highest) allowed value.
+MEASURES: dict[str, tuple[float | None, float | None]] = {
+    "face-match": (0.6, None),    # similarity between the face and the rule's reference image
+    "face-share": (0.18, 0.32),   # height of the main face as a share of the image height (waist-up framing)
+    "grain": (2.0, None),         # fine noise in flat areas, on a 0-255 scale
+}
+_NUM = r"(-?\d+(?:\.\d+)?)"
+_MEASURE = re.compile(rf"^([a-z][a-z-]*)\s*(?:(>=|≥|<=|≤)\s*{_NUM}|{_NUM}\s*\.\.\s*{_NUM})?$")
 _FIELD_LOOKUP = {alias.casefold(): name for name, aliases in _FIELDS.items() for alias in aliases}
 _ZH_FIELD = {name: aliases[1] for name, aliases in _FIELDS.items()}
 
@@ -121,12 +127,22 @@ class Rule:
     kind_explicit: bool = False
 
     @property
-    def measurement(self) -> tuple[str, float] | None:
-        """(tool name, threshold) when a tool decides this rule, else ``None``."""
+    def measurement(self) -> tuple[str, float | None, float | None] | None:
+        """(tool name, lowest, highest allowed value) when a tool decides this rule, else ``None``.
+
+        Written ``name``, ``name >= 0.5``, ``name <= 3`` or ``name 0.18..0.32``.
+        """
         m = _MEASURE.match(self.measure.strip().casefold())
         if not m or m.group(1) not in MEASURES:
             return None
-        return m.group(1), float(m.group(2)) if m.group(2) else MEASURES[m.group(1)]
+        name, op, value, low, high = m.groups()
+        if op in (">=", "≥"):
+            return name, float(value), None
+        if op:
+            return name, None, float(value)
+        if low is not None:
+            return name, float(low), float(high)
+        return (name, *MEASURES[name])
 
     def question(self, lang: str = "en") -> str:
         """The yes/no question a checker asks about an image for this rule."""
@@ -354,7 +370,7 @@ def _set_field(rule: Rule, content: str, ln: int, problems: list[Problem]) -> st
     elif name == "measure":
         rule.measure = value
         if rule.measurement is None:
-            problems.append(Problem(ln, "error", f'measure must look like "face-match" or "face-match >= 0.4", '
+            problems.append(Problem(ln, "error", f'measure must look like "face-match", "grain >= 2" or "face-share 0.18..0.32", '
                                                  f'not "{value}". Measures are: {", ".join(MEASURES)}'))
     else:
         setattr(rule, name, value)
@@ -392,7 +408,7 @@ def _lint(spec: Spec) -> None:
             problems.append(Problem(r.line, "warning", f"rule {r.id} forbids something but expects the answer "
                                                         'yes. If the check asks whether the unwanted thing '
                                                         'is present, add "expect: no"'))
-        if r.measure and not r.refs:
+        if r.measure.strip().casefold().startswith("face-match") and not r.refs:
             problems.append(Problem(r.line, "warning", f"rule {r.id} measures against a reference image "
                                                         'but has no "ref"; the judge will be asked instead'))
         if spec.path is not None:

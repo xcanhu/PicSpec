@@ -299,7 +299,7 @@ def _face_spec(tmp_path, text=FACE_SPEC):
 
 def test_face_match_is_measured_and_not_asked(tmp_path):
     spec = _face_spec(tmp_path)
-    assert spec.rule("same").measurement == ("face-match", 0.5)
+    assert spec.rule("same").measurement == ("face-match", 0.5, None)
     big = Image.new("RGB", (100, 200))
     judge = FakeJudge({"g": "yes", "same": "yes"})
     report = check_image(big, spec, judge, faces=FakeFaces(score=0.31))
@@ -333,7 +333,7 @@ def test_no_face_and_large_face(tmp_path):
 def test_measure_field_round_trips_and_is_validated():
     from picspec.spec import dumps
     spec = loads("---\nlang: zh\n---\n- `a` 同一张脸\n  - 参考图：x.png\n  - 测量：face-match\n")
-    assert spec.rule("a").measurement == ("face-match", 0.6) and "  - 测量：face-match" in dumps(spec)
+    assert spec.rule("a").measurement == ("face-match", 0.6, None) and "  - 测量：face-match" in dumps(spec)
     bad = loads("- `a` x\n  - measure: magic\n")
     assert any("measure must look like" in p.message for p in bad.errors)
     assert any("has no \"ref\"" in p.message for p in loads("- `a` x\n  - measure: face-match\n").problems)

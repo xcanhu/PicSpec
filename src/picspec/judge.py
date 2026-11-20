@@ -9,6 +9,7 @@ from typing import Any, Iterable
 from PIL import Image
 
 from . import face as face_tools
+from . import measure
 from .llm import ChatModel, extract_json
 from .spec import Rule, Spec
 
@@ -113,38 +114,6 @@ def _views(image: Image.Image, rules: list[Rule], faces: Any = None, crop: int =
     return views, "\n".join(notes)
 
 
-def _measure(image: Image.Image, rule: Rule, spec: Spec, faces: Any) -> tuple[str, str, str] | None:
-    """Decide ``rule`` with a tool. Returns (answer, seen, tool name), or ``None`` to leave it to the judge."""
-    wanted = rule.measurement
-    if wanted is None or faces is None:
-        return None
-    name, threshold = wanted
-    try:
-        found = faces.detect(image)
-    except Exception:
-        return None
-    usable = [f for f in found if not getattr(f, "profile", False)]
-    if not usable:
-        zh = spec.lang == "zh"
-        why = (("脸转得太偏，无法比对" if zh else "the face is turned too far to compare") if found
-               else ("没有找到可比对的人脸" if zh else "no face was found to compare"))
-        return ("na" if rule.when else ("no" if rule.expect else "yes")), why, name
-    best: tuple[float, str] | None = None  # several references (front, three-quarter view...): the closest counts
-    for ref in rule.refs:
-        try:
-            score = faces.similarity(image, Image.open(spec.ref_path(ref)).convert("RGB"))
-        except Exception:
-            continue
-        if score is not None and (best is None or score > best[0]):
-            best = (score, ref.path)
-    if best is None:
-        return None
-    return ("yes" if best[0] >= threshold else "no",
-            (f"与 {best[1]} 的人脸相似度为 {best[0]:.2f}；达到 {threshold:.2f} 才算同一个人" if spec.lang == "zh" else
-             f"face similarity {best[0]:.2f} against {best[1]}; {threshold:.2f} or more counts as the same person"),
-            name)
-
-
 def _references(rules: list[Rule], spec: Spec) -> list[tuple[list[str], Image.Image]]:
     """Reference images the judge should compare against, one per file: (ids of the questions it serves, image)."""
     found: dict[str, tuple[list[str], Image.Image]] = {}
@@ -209,7 +178,7 @@ def check_image(image: Image.Image, spec: Spec, judge: ChatModel, *, only: Itera
         return Report()
     measured: dict[str, tuple[str, str, str]] = {}
     for r in rules:
-        result = _measure(image, r, spec, faces)
+        result = measure.evaluate(image, r, spec, faces)
         if result is not None:
             measured[r.id] = result
     asked = [r for r in rules if r.id not in measured]
