@@ -125,7 +125,9 @@ def _measure(image: Image.Image, rule: Rule, spec: Spec, faces: Any) -> tuple[st
         return None
     usable = [f for f in found if not getattr(f, "profile", False)]
     if not usable:
-        why = "the face is turned too far to compare" if found else "no face was found to compare"
+        zh = spec.lang == "zh"
+        why = (("脸转得太偏，无法比对" if zh else "the face is turned too far to compare") if found
+               else ("没有找到可比对的人脸" if zh else "no face was found to compare"))
         return ("na" if rule.when else ("no" if rule.expect else "yes")), why, name
     best: tuple[float, str] | None = None  # several references (front, three-quarter view...): the closest counts
     for ref in rule.refs:
@@ -138,7 +140,8 @@ def _measure(image: Image.Image, rule: Rule, spec: Spec, faces: Any) -> tuple[st
     if best is None:
         return None
     return ("yes" if best[0] >= threshold else "no",
-            f"face similarity {best[0]:.2f} against {best[1]}; {threshold:.2f} or more counts as the same person",
+            (f"与 {best[1]} 的人脸相似度为 {best[0]:.2f}；达到 {threshold:.2f} 才算同一个人" if spec.lang == "zh" else
+             f"face similarity {best[0]:.2f} against {best[1]}; {threshold:.2f} or more counts as the same person"),
             name)
 
 
