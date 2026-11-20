@@ -117,7 +117,7 @@ picspec rules --category expression    # one category
 picspec rules skin-texture bad-hands   # print these as spec text, ready to paste
 ```
 
-Every entry carries an honest label for how far a vision model can be trusted to check it: **judge verified** (the judge followed synthetic changes in a live audit: 4 rules so far), **judge unreliable** (it failed one: plastic skin, same face), or **untested** (everything else). An untested rule still shapes the prompt; treat its pass or fail as a hint until it has been audited.
+Every entry carries an honest label for how far a vision model can be trusted to check it: **judge verified** (the judge followed synthetic changes in a live test: 6 rules so far), **judge unreliable** (it failed one: plastic skin, skin texture, same face), or **untested** (everything else). An untested rule still shapes the prompt; treat its pass or fail as a hint until it has been audited.
 
 `picspec init --template NAME` writes a starter spec built from the library:
 

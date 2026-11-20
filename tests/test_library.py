@@ -13,7 +13,7 @@ def test_entries_are_complete_and_unique():
         assert all(e.text) and all(e.check) and (e.kind == "forbid") == (not e.expect)
         assert bool(e.when[0]) == bool(e.when[1]) and bool(e.note[0]) == bool(e.note[1])
     assert all(library.entries(c) for c in library.CATEGORIES)
-    assert {e.id for e in library.entries(status="verified")} == {"film-grain", "text", "sharp-face", "faces-left"}
+    assert {e.id for e in library.entries(status="verified")} == {"film-grain", "text", "sharp-face", "faces-left", "waist-up", "photoreal"}
 
 
 @pytest.mark.parametrize("name", list(library.TEMPLATES))
