@@ -5,7 +5,7 @@ from .loop import Attempt, Outcome, generate_checked
 from .request import Directive, Reference, Request, bare_request, build_request
 from .spec import Category, Problem, Ref, Rule, Spec, SpecError, dumps, find, load, loads
 
-__version__ = "0.6.1"
+__version__ = "0.7.0"
 
 __all__ = [
     "Attempt", "Category", "Directive", "Outcome", "Problem", "Ref", "Reference", "Report", "Request", "Rule", "Spec", "SpecError", "Verdict",

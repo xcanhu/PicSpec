@@ -16,6 +16,7 @@ Natural-light documentary portraits with the look of 35mm film.
 
 - `t1` Fine film grain across the whole frame, no digital smoothness
   - check: Is an even, fine grain visible across the image?
+  - measure: grain >= 3
 - `t2` The face is sharp and the eyes are in focus
   - check: Are the person's eyes and face sharp, with no blur?
   - when: there is a person in the image
@@ -31,6 +32,7 @@ Natural-light documentary portraits with the look of 35mm film.
 - `c2` Medium shot, from the waist up
   - check: Is this a medium shot showing the person from the waist up?
   - when: there is a person in the image
+  - measure: face-share 0.22..0.32
 
 ## Avoid
 

@@ -29,7 +29,7 @@ Natural-light documentary portraits with the look of 35mm film.
   - expect: no
 ```
 
-> **Status: v0.6.1, early.** Working today: the spec format, the gpt-image-2 and ComfyUI adapters, checking each rule on the result with a vision model, and repairing the best image by editing it. Learning rules from your feedback is next: see the [roadmap](#roadmap).
+> **Status: v0.7, early.** Working today: the spec format, the gpt-image-2 and ComfyUI adapters, checking each rule on the result with a vision model, and repairing the best image by editing it. Learning rules from your feedback is next: see the [roadmap](#roadmap).
 
 ## Live results
 
@@ -199,11 +199,13 @@ A vision model is not the right tool for everything. A rule with a `measure` fie
 
 | Measure | What it measures | Example | Needs |
 | --- | --- | --- | --- |
-| `grain` | Fine noise in the flat areas of the image, 0 to 255 | `measure: grain >= 2` | nothing |
-| `face-share` | Height of the main face as a share of the image height. This is the shot size: about 0.06 to 0.13 is a full body, 0.18 to 0.32 is waist-up | `measure: face-share 0.18..0.32` | face tools |
+| `grain` | Fine noise in the flat areas of the image, 0 to 255. About 3 is faint grain seen when zoomed in, 5 shows on a close look, 10 is obvious | `measure: grain >= 3` | nothing |
+| `face-share` | Height of the main face as a share of the image height. This is the shot size: about 0.06 to 0.13 is a full body, 0.22 to 0.32 is waist-up | `measure: face-share 0.22..0.32` | face tools |
 | `face-match` | Similarity between the face and the rule's `ref` image | `measure: face-match >= 0.6` | face tools |
 
-Two of these can also be **repaired in code**, before PicSpec pays for an edit or a new image. If the face is too small for the framing rule, the image is cropped around it and enlarged back to size (up to 2x). If grain is missing, it is added. The repaired image is checked again like any other and shows up as `fixed in code from round1-1.png`. Shot size is the case this was built for: gpt-image-2 ignored "waist-up" in every one of our test images, however the prompt was worded.
+Two of these can also be **repaired in code**, before PicSpec pays for an edit or a new image. If the face is too small for the framing rule, the image is cropped around it and enlarged back to size (up to 2x). If grain is missing, it is added. The repaired image is checked again like any other and shows up as `fixed in code from round1-1.png`. Shot size is the case this was built for: across our tests gpt-image-2 followed "waist-up" in fewer than half the images, however the prompt was worded.
+
+On four real images that failed framing or grain, three were cropped (enlarged 1.3x to 1.7x) and regrained, and came out as sensible waist-up frames that stayed acceptably sharp; the fourth needed more than 2x and was left uncropped, as designed. How far to trust the thresholds: the grain level matched the judge on all 42 audit images at 2.6, but disagreed with it on 8 of 20 fresh images, because levels between 2 and 3 are below what an eye separates at normal size. A face share under 0.15 was judged "too wide" every time, while 0.15 to 0.20 was a coin toss for the judge, so the default starts at 0.22. Both defaults rest on a few dozen images.
 
 ## Checking and retrying
 
