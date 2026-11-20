@@ -487,6 +487,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_learn)
     learn_parser = p
 
+    p = sub.add_parser("mcp", help="run as an MCP server over stdio, for coding agents")
+    p.set_defaults(func=lambda args: __import__("picspec.mcp", fromlist=["serve"]).serve())
+
     p = sub.add_parser("faces", help="find the faces in images and compare them pairwise (needs picspec[face])")
     p.add_argument("images", nargs="+", help="image files")
     p.add_argument("-o", "--out", help="folder for the face close-ups")
