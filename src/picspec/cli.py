@@ -15,7 +15,7 @@ from PIL import Image
 
 from .audit import PROBES, audit_judge, parse_probe
 from .backends import DEFAULT_BACKEND, Backend, Rendered, Result, make_backend
-from . import face, library
+from . import face, learn, library
 from .judge import FAIL, NOT_APPLICABLE, PASS, Report, check_image
 from .llm import OpenAIChat, make_judge
 from .loop import Attempt, generate_checked
@@ -165,6 +165,39 @@ def cmd_rules(args: argparse.Namespace) -> int:
         print()
     print("把规则加进规格：picspec rules 规则名 ...，把输出粘贴进 PICSPEC.md" if i else
           "To use rules: picspec rules ID ... and paste the output into PICSPEC.md")
+    return 0
+
+
+def cmd_learn(args: argparse.Namespace) -> int:
+    path = _locate(args.spec)
+    spec = _load(args.spec)
+    images = []
+    for name in args.image or []:
+        try:
+            images.append(Image.open(name).convert("RGB"))
+        except OSError as e:
+            raise UserError(f"cannot read {name}: {e}") from e
+    try:
+        proposal = learn.propose(spec, args.feedback, _judge(args, spec), images)
+    except (RuntimeError, ValueError) as e:
+        raise UserError(str(e)) from e
+    after = learn.apply(spec, proposal.changes)
+    if args.json:
+        print(learn.to_json(proposal))
+    else:
+        for c in proposal.changes:
+            print(f"{c.action:<6} {c.library or c.id or '(new rule)'}: {c.why}")
+        for s in proposal.skipped:
+            print(f"skipped: {s}", file=sys.stderr)
+        if proposal.note:
+            print(proposal.note)
+        text = learn.diff(spec, after)
+        print("\n" + text if text else "No change to the spec is proposed.")
+    if args.apply and proposal.changes:
+        path.write_text(dumps(after), encoding="utf-8")
+        print(f"\nWrote {path}.", file=sys.stderr if args.json else sys.stdout)
+    elif proposal.changes and not args.json:
+        print("\nRun again with --apply to write this to the spec.")
     return 0
 
 
@@ -445,6 +478,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--lang", choices=("zh", "en"), help="language (default: that of the nearest spec, else en)")
     p.set_defaults(func=cmd_rules)
 
+    p = sub.add_parser("learn", help="turn a sentence of feedback into a proposed change to the rules")
+    p.add_argument("feedback", help='what was wrong, in your own words, e.g. "the skin is too smooth"')
+    p.add_argument("--image", action="append", help="the image the feedback is about (repeatable)")
+    p.add_argument("--spec", help=f"spec file (default: nearest {SPEC_FILENAME})")
+    p.add_argument("--apply", action="store_true", help="write the change to the spec")
+    p.add_argument("--json", action="store_true", help="print JSON")
+    p.set_defaults(func=cmd_learn)
+    learn_parser = p
+
     p = sub.add_parser("faces", help="find the faces in images and compare them pairwise (needs picspec[face])")
     p.add_argument("images", nargs="+", help="image files")
     p.add_argument("-o", "--out", help="folder for the face close-ups")
@@ -484,6 +526,8 @@ def build_parser() -> argparse.ArgumentParser:
                                                "else the OpenAI key)")
         p.add_argument("--one-by-one", action="store_true",
                        help="ask the judge one rule per request: slower, costs more, less cross-talk")
+
+    judging(learn_parser)
 
     p = sub.add_parser("compile", help="show exactly what would be sent to the model, without calling it")
     common(p)
