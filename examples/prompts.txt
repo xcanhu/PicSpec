@@ -1,0 +1,22 @@
+# Prompts for `picspec bench`, one per line. Mostly people, and no style words on purpose:
+# the look is left entirely to the spec.
+A woman with an umbrella in an alley after rain
+A young man reading by a cafe window
+An old woman choosing vegetables at a market
+A commuter waiting on a subway platform
+A girl standing on rocks by the sea in the wind
+A middle-aged man repairing a bicycle
+A father cooking in a kitchen with his child beside him
+A student looking for a book between library shelves
+A teenager playing guitar on a rooftop at dusk
+A florist arranging flowers at the shop door
+A man walking a dog in the snow
+An old man leafing through a book in a second-hand bookshop
+A girl drinking water beside a basketball court
+A street vendor cooking noodles at a night market stall
+A traveller looking out of a train window
+A woman knitting on a park bench
+An illustrator painting in a studio
+A farmer carrying a hoe along a field path
+A woman pulling a suitcase through an airport departure hall
+A couple selling breakfast on a street corner at dawn

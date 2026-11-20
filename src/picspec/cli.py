@@ -15,7 +15,7 @@ from PIL import Image
 
 from .audit import PROBES, audit_judge, parse_probe
 from .backends import DEFAULT_BACKEND, Backend, Rendered, Result, make_backend
-from . import face, learn, library
+from . import bench, face, learn, library
 from .judge import FAIL, NOT_APPLICABLE, PASS, Report, check_image
 from .llm import OpenAIChat, make_judge
 from .loop import Attempt, generate_checked
@@ -165,6 +165,39 @@ def cmd_rules(args: argparse.Namespace) -> int:
         print()
     print("把规则加进规格：picspec rules 规则名 ...，把输出粘贴进 PICSPEC.md" if i else
           "To use rules: picspec rules ID ... and paste the output into PICSPEC.md")
+    return 0
+
+
+def cmd_bench(args: argparse.Namespace) -> int:
+    spec = _load(args.spec)
+    backend = _backend(args, spec)
+    judge = _judge(args, spec)
+    try:
+        prompts = bench.read_prompts(args.prompts)
+    except OSError as e:
+        raise UserError(f"cannot read {args.prompts}: {e}") from e
+    if args.limit:
+        prompts = prompts[:args.limit]
+    if not prompts:
+        raise UserError(f"{args.prompts} has no prompts")
+    out = Path(args.out or Path("picspec-bench") / time.strftime("%Y%m%d-%H%M%S"))
+    try:
+        data = bench.run(spec, prompts, backend, judge, out, rounds=args.rounds, seed=args.seed,
+                         on_step=lambda s: print(s, file=sys.stderr, flush=True),
+                         only=_ids(args.only), skip=_ids(args.skip) or (), size=_size(args.size),
+                         quality=args.quality)
+    except KeyError as e:
+        raise UserError(str(e.args[0])) from e
+    except (RuntimeError, ValueError, OSError) as e:
+        raise UserError(f"{e}\nFinished prompts are saved in {out}; run the same command with -o {out} "
+                        "to continue.") from e
+    summary = bench.summarise(data, spec)
+    table = bench.to_markdown(summary, spec, spec.lang)
+    (out / "bench.md").write_text(table, encoding="utf-8")
+    (out / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(json.dumps(summary, ensure_ascii=False, indent=1) if args.json else table)
+    print(f"{summary['prompts']} prompts, {summary['image_requests']} image requests. Images and tables are in {out}",
+          file=sys.stderr)
     return 0
 
 
@@ -443,8 +476,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
                 on_attempt=on_attempt, size=_size(args.size), quality=args.quality)
             best = outcome.best
             best.image.save(out / "best.png")
-            record["best"] = next(e["file"] for e in record["images"]
-                                  if e.get("round") == best.round and e["seed"] == best.seed)
+            record["best"] = names[outcome.attempts.index(best)]
             print(f"\n{out / 'best.png'}  (copy of {record['best']}: {_tally(best.report)})")
             _print_report(spec, best.report)
             exit_code = 0 if outcome.ok else 1
@@ -531,6 +563,26 @@ def build_parser() -> argparse.ArgumentParser:
                        help="ask the judge one rule per request: slower, costs more, less cross-talk")
 
     judging(learn_parser)
+
+    p = sub.add_parser("bench", help="measure what the spec changes over many prompts: bare prompt against spec")
+    p.add_argument("prompts", help="text file with one prompt per line")
+    p.add_argument("--spec", help=f"spec file (default: nearest {SPEC_FILENAME})")
+    p.add_argument("--backend", help="image backend (default: the spec's backend setting, else gpt-image-2)")
+    p.add_argument("--workflow", help="ComfyUI workflow in API format (selects the comfyui backend)")
+    p.add_argument("--base-url", help="API base URL, or the ComfyUI address")
+    p.add_argument("--api-key", help="API key (default: PICSPEC_OPENAI_API_KEY or OPENAI_API_KEY)")
+    p.add_argument("--size", help="WIDTHxHEIGHT (default: the spec's size setting)")
+    p.add_argument("--quality", help="low, medium, high or auto (default: the spec's quality setting)")
+    p.add_argument("--only", help="apply only these rule ids, comma separated")
+    p.add_argument("--skip", help="leave out these rule ids, comma separated")
+    p.add_argument("--rounds", type=int, default=1,
+                   help="rounds per prompt; above 1 also reports the result after repair (default 1)")
+    p.add_argument("--limit", type=int, help="use only the first N prompts")
+    p.add_argument("--seed", type=int, default=0, help="first seed, for backends that take one")
+    p.add_argument("-o", "--out", help="output folder; an unfinished run in it is continued")
+    p.add_argument("--json", action="store_true", help="print JSON")
+    judging(p)
+    p.set_defaults(func=cmd_bench)
 
     p = sub.add_parser("compile", help="show exactly what would be sent to the model, without calling it")
     common(p)
