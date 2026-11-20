@@ -157,7 +157,8 @@ def _ask(image: Image.Image, rules: list[Rule], judge: ChatModel, spec: Spec,
     refs = _references(rules, spec)
     questions = [{"id": r.id, "question": r.question(lang), **({"condition": r.when} if r.when else {})}
                  for r in rules]
-    user = ("Questions:\n" + json.dumps(questions, ensure_ascii=False, indent=1)
+    user = (("Write every \"seen\" sentence in Chinese.\n\n" if lang == "zh" else "")
+            + "Questions:\n" + json.dumps(questions, ensure_ascii=False, indent=1)
             + ("\n\n" + view_note if view_note else ""))
     if refs:
         lines = [f"- image {len(views) + n}: reference for question {r.id}" + (f" ({note})" if note else "")
