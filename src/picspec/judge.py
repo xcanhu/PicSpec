@@ -8,6 +8,7 @@ from typing import Any, Iterable
 
 from PIL import Image
 
+from . import face as face_tools
 from .llm import ChatModel, extract_json
 from .spec import Rule, Spec
 
@@ -25,8 +26,8 @@ For each question:
 Reply with JSON only, in this shape, with one entry per question and the same ids:
 {"answers": [{"id": "<id>", "seen": "<one sentence>", "answer": "yes" | "no" | "na"}]}"""
 
-_CROP_NOTE = ("Two images are attached. The first is the whole image. The second is a crop from its centre "
-              "at full resolution: use it for fine detail such as grain, noise and sharpness.")
+_CROP_NOTE = ("Image 1 is the whole image under inspection. Image 2 is a crop from its centre at full resolution: "
+              "use it for fine detail such as grain, noise and sharpness.")
 
 _REF_NOTE = ("Reference images follow the image under inspection. Each belongs to one question: compare the inspected "
              "image with it for that question only, and never treat a reference as the image being judged.")
@@ -44,6 +45,7 @@ class Verdict:
     seen: str = ""
     level: str = "must"
     answer: bool | None = None  # the judge's raw yes/no; None for n/a or an unusable reply
+    by: str = "judge"  # "judge" or the name of the tool that decided
 
     @property
     def failed(self) -> bool:
@@ -81,18 +83,57 @@ class Report:
         return len(self.must_failed), len(self.failed)
 
     def to_json(self) -> list[dict[str, Any]]:
-        return [{"rule": v.rule_id, "status": v.status, "seen": v.seen} for v in self.verdicts]
+        return [{"rule": v.rule_id, "status": v.status, "seen": v.seen, **({"by": v.by} if v.by != "judge" else {})}
+                for v in self.verdicts]
 
 
-def _views(image: Image.Image, rules: list[Rule], crop: int = 768) -> list[Image.Image]:
-    """The whole image, plus a full-resolution centre crop when texture rules need fine detail."""
-    views = [image]
+_FACE_NOTE = ("Image {n} is a close-up of the main face, cut from the inspected image at full resolution: use it for "
+              "skin, eyes and expression.")
+# A face shorter than this share of the image height is too small for the judge to see skin detail.
+_SMALL_FACE = 0.4
+
+
+def _views(image: Image.Image, rules: list[Rule], faces: Any = None, crop: int = 768) -> tuple[list[Image.Image], str]:
+    """The whole image plus close-ups the judge needs for fine detail, and a note that explains them."""
+    views, notes = [image], []
     if any(r.kind == "texture" for r in rules) and max(image.size) > 1536:
         w, h = image.size
         side = min(crop, w, h)
         left, top = (w - side) // 2, (h - side) // 2
         views.append(image.crop((left, top, left + side, top + side)))
-    return views
+        notes.append(_CROP_NOTE)
+    if faces is not None:
+        try:
+            found = faces.detect(image)
+        except Exception:  # a detector failure must not stop the check
+            found = []
+        if found and found[0].box[3] < _SMALL_FACE * image.height:
+            views.append(face_tools.face_crop(image, found[0]))
+            notes.append(_FACE_NOTE.format(n=len(views)))
+    return views, "\n".join(notes)
+
+
+def _measure(image: Image.Image, rule: Rule, spec: Spec, faces: Any) -> tuple[str, str, str] | None:
+    """Decide ``rule`` with a tool. Returns (answer, seen, tool name), or ``None`` to leave it to the judge."""
+    wanted = rule.measurement
+    if wanted is None or faces is None:
+        return None
+    name, threshold = wanted
+    for ref in rule.refs:
+        try:
+            reference = Image.open(spec.ref_path(ref)).convert("RGB")
+            score = faces.similarity(image, reference)
+        except Exception:
+            continue
+        if score is None:
+            if rule.when:
+                return "na", "no face was found to compare", name
+            return ("no" if rule.expect else "yes"), "no face was found to compare", name
+        same = score >= threshold
+        return ("yes" if same else "no",
+                f"face similarity {score:.2f} against {ref.path}; {threshold:.2f} or more counts as the same person",
+                name)
+    return None
 
 
 def _references(rules: list[Rule], spec: Spec) -> list[tuple[Rule, str, Image.Image]]:
@@ -109,14 +150,15 @@ def _references(rules: list[Rule], spec: Spec) -> list[tuple[Rule, str, Image.Im
     return found
 
 
-def _ask(image: Image.Image, rules: list[Rule], judge: ChatModel, spec: Spec) -> dict[str, tuple[str, str]]:
+def _ask(image: Image.Image, rules: list[Rule], judge: ChatModel, spec: Spec,
+         faces: Any = None) -> dict[str, tuple[str, str]]:
     lang = spec.lang
-    views = _views(image, rules)
+    views, view_note = _views(image, rules, faces)
     refs = _references(rules, spec)
     questions = [{"id": r.id, "question": r.question(lang), **({"condition": r.when} if r.when else {})}
                  for r in rules]
     user = ("Questions:\n" + json.dumps(questions, ensure_ascii=False, indent=1)
-            + ("\n\n" + _CROP_NOTE if len(views) > 1 else ""))
+            + ("\n\n" + view_note if view_note else ""))
     if refs:
         lines = [f"- image {len(views) + n}: reference for question {r.id}" + (f" ({note})" if note else "")
                  for n, (r, note, _) in enumerate(refs, 1)]
@@ -134,23 +176,35 @@ def _ask(image: Image.Image, rules: list[Rule], judge: ChatModel, spec: Spec) ->
 
 
 def check_image(image: Image.Image, spec: Spec, judge: ChatModel, *, only: Iterable[str] | None = None,
-                one_by_one: bool = False) -> Report:
+                one_by_one: bool = False, faces: Any = "auto") -> Report:
     """Ask ``judge`` every rule's question about ``image``.
 
     By default all questions go in one request. ``one_by_one`` sends one request per rule,
     which costs more but stops one answer from colouring the next.
+
+    ``faces`` is a :class:`picspec.face.FaceTools`, ``None`` to do without, or ``"auto"`` to use
+    them when they are installed. With them, rules that have a ``measure`` are decided by the tool
+    and the judge also gets a close-up of the main face when it is small in the frame.
     """
+    if faces == "auto":
+        faces = face_tools.shared()
     wanted = set(only) if only is not None else None
     rules = [r for r in spec.rules if wanted is None or r.id in wanted]
     if not rules:
         return Report()
-    batches = [[r] for r in rules] if one_by_one else [rules]
-    answers: dict[str, tuple[str, str]] = {}
+    measured: dict[str, tuple[str, str, str]] = {}
+    for r in rules:
+        result = _measure(image, r, spec, faces)
+        if result is not None:
+            measured[r.id] = result
+    asked = [r for r in rules if r.id not in measured]
+    batches = [[r] for r in asked] if one_by_one else ([asked] if asked else [])
+    answers: dict[str, tuple[str, str]] = {k: v[:2] for k, v in measured.items()}
     for batch in batches:
-        got = _ask(image, batch, judge, spec)
+        got = _ask(image, batch, judge, spec, faces)
         missing = [r for r in batch if r.id not in got]
         if missing and not one_by_one and len(batch) > 1:
-            got.update(_ask(image, missing, judge, spec))  # ask again for the ones the reply skipped
+            got.update(_ask(image, missing, judge, spec, faces))  # ask again for the ones the reply skipped
         answers.update(got)
 
     report = Report()
@@ -163,5 +217,6 @@ def check_image(image: Image.Image, spec: Spec, judge: ChatModel, *, only: Itera
         else:
             status = UNKNOWN
         raw = (answer in _YES) if status in (PASS, FAIL) else None
-        report.verdicts.append(Verdict(r.id, status, seen, r.level, raw))
+        report.verdicts.append(Verdict(r.id, status, seen, r.level, raw, measured[r.id][2] if r.id in measured
+                                       else "judge"))
     return report

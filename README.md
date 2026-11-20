@@ -29,7 +29,7 @@ Natural-light documentary portraits with the look of 35mm film.
   - expect: no
 ```
 
-> **Status: v0.5, early.** Working today: the spec format, the gpt-image-2 and ComfyUI adapters, checking each rule on the result with a vision model, and repairing the best image by editing it. Learning rules from your feedback is next: see the [roadmap](#roadmap).
+> **Status: v0.6, early.** Working today: the spec format, the gpt-image-2 and ComfyUI adapters, checking each rule on the result with a vision model, and repairing the best image by editing it. Learning rules from your feedback is next: see the [roadmap](#roadmap).
 
 ## First live results
 
@@ -93,6 +93,7 @@ picspec check photo.png                          # check an image you already ha
 | `picspec generate "prompt"` | Generate images that follow the spec |
 | `picspec generate "prompt" --check` | Generate, check every rule, and repair what failed |
 | `picspec check image.png` | Check existing images against the spec, rule by rule |
+| `picspec faces a.png b.png` | Find faces and compare them pairwise (needs the face tools) |
 | `picspec audit image.png --probe ...` | Test the judge: change images in known ways and see whether its answers follow |
 
 `compile` and `generate` take `--only t1,c1` and `--skip f2` to choose rules, `--size 1536x1024`, `--quality high`, and `--spec FILE`. Without `--spec`, PicSpec uses the `PICSPEC.md` in the current folder or the nearest parent folder, so one spec can cover a whole project.
@@ -133,7 +134,21 @@ Every entry carries an honest label for how far a vision model can be trusted to
 
 ### Consistency across images
 
-A rule that has a `ref` image is checked against that image: the judge receives the reference next to the result, so a question such as "Is the person's face the same person as in the reference image?" works. The `drama-shot` template expects `refs/character.png` and `refs/scene.png` next to the spec, which you make first with the other two drama templates. Face drift between shots is the complaint that production guides for AI short dramas raise most often; these comparison rules are new. In a first trial of 7 image pairs the judge was right on every pair that really matched, but called 3 of 3 different generated faces the same person, so treat a pass on `same-face` with caution. A dedicated face-comparison model is the planned fix.
+A rule that has a `ref` image is checked against that image: the judge receives the reference next to the result, so a question such as "Is the person's face the same person as in the reference image?" works. The `drama-shot` template expects `refs/character.png` and `refs/scene.png` next to the spec, which you make first with the other two drama templates. Face drift between shots is the complaint that production guides for AI short dramas raise most often; these comparison rules are new. In a first trial of 7 image pairs the judge was right on every pair that really matched, but called 3 of 3 different generated faces the same person, so treat a pass on `same-face` with caution. Install the [face tools](#face-tools-optional) to have a face-comparison model decide it instead.
+
+## Face tools (optional)
+
+Two things a vision model does badly on portraits are measured instead when you install the face tools:
+
+```bash
+pip install -e ".[face]"     # OpenCV; two small models download on first use
+picspec faces a.png b.png    # faces found, and how alike each pair is
+```
+
+- **Skin and expression.** In a 1024x1536 image the face is too small for the judge to see pores: it answered "no visible skin texture" on every test image, retouched or not. With the face tools, the judge also receives a full-resolution close-up of the main face whenever the face is under 40% of the image height.
+- **Same person.** A rule with `measure: face-match` and a `ref` image is decided by a face-comparison model (cosine similarity of SFace embeddings), not by the judge. The default threshold of 0.363 is the published one for photographs of real people; generated faces tend to look alike, so set your own with `measure: face-match >= 0.5` once you have seen the scores for your characters.
+
+Without the face tools everything still works: measured rules fall back to the judge and the command says so. Set `PICSPEC_FACE=off` to turn them off, or `PICSPEC_FACE_MODELS` to a folder holding the model files if the machine is offline.
 
 ## Checking and retrying
 
@@ -223,6 +238,7 @@ A spec is plain Markdown that reads well on GitHub and is easy to edit by hand.
 | `when` | When the rule applies, for example "there is a person in the image" | Always |
 | `prompt` | Wording to send to the model instead of the rule text | The rule text |
 | `negative` | Terms for the negative prompt, on backends that have one | None |
+| `measure` | Let a tool decide the rule instead of the judge. Today: `face-match`, optionally `face-match >= 0.5` | None |
 | `ref` | A reference image, as `path \| what to take from it`. Repeat the line for more images | None |
 | `kind` | Overrides the kind taken from the heading: `texture`, `composition`, `forbid`, `other` | From the heading |
 

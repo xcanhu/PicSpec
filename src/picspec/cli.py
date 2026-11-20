@@ -15,7 +15,7 @@ from PIL import Image
 
 from .audit import PROBES, audit_judge, parse_probe
 from .backends import DEFAULT_BACKEND, Backend, Rendered, Result, make_backend
-from . import library
+from . import face, library
 from .judge import FAIL, NOT_APPLICABLE, PASS, Report, check_image
 from .llm import OpenAIChat, make_judge
 from .loop import Attempt, generate_checked
@@ -83,6 +83,9 @@ def _request(args: argparse.Namespace, spec: Spec, seed: int = 0) -> Request:
 
 
 def _judge(args: argparse.Namespace, spec: Spec) -> OpenAIChat:
+    if any(r.measurement for r in spec.rules) and face.shared() is None:
+        print(f"note: rules with a measure will be left to the judge, because the face tools are not available "
+              f"({face.why_missing()})", file=sys.stderr)
     try:
         return make_judge(args.judge or spec.settings.get("judge"), args.judge_base_url, args.judge_api_key)
     except ValueError as e:
@@ -97,7 +100,7 @@ def _print_report(spec: Spec, report: Report) -> None:
         rule = spec.rule(v.rule_id)
         level = "" if rule.level == "must" else "  (should)"
         print(f"  {_MARK.get(v.status, '??  ')} {v.rule_id:<5} {rule.text}{level}")
-        if v.seen and v.status != PASS:
+        if v.seen and (v.status != PASS or v.by != "judge"):
             print(f"             {v.seen}")
 
 
@@ -161,6 +164,42 @@ def cmd_rules(args: argparse.Namespace) -> int:
         print()
     print("把规则加进规格：picspec rules 规则名 ...，把输出粘贴进 PICSPEC.md" if i else
           "To use rules: picspec rules ID ... and paste the output into PICSPEC.md")
+    return 0
+
+
+def cmd_faces(args: argparse.Namespace) -> int:
+    try:
+        tools = face.FaceTools()
+    except face.FaceToolsMissing as e:
+        raise UserError(str(e)) from e
+    images = []
+    for name in args.images:
+        try:
+            images.append(Image.open(name).convert("RGB"))
+        except OSError as e:
+            raise UserError(f"cannot read {name}: {e}") from e
+    rows = []
+    for name, image in zip(args.images, images):
+        found = tools.detect(image)
+        share = f", largest is {found[0].box[3] / image.height:.0%} of the image height" if found else ""
+        rows.append({"image": name, "faces": len(found), "box": list(found[0].box) if found else None})
+        if not args.json:
+            print(f"{name}: {len(found)} face(s){share}")
+        if found and args.out:
+            out = Path(args.out)
+            out.mkdir(parents=True, exist_ok=True)
+            face.face_crop(image, found[0]).save(out / f"{Path(name).stem}.face.png")
+    pairs = []
+    for i in range(len(images)):
+        for j in range(i + 1, len(images)):
+            score = tools.similarity(images[i], images[j])
+            pairs.append({"a": args.images[i], "b": args.images[j], "similarity": score})
+            if not args.json:
+                shown = ("no face" if score is None
+                         else f"{score:.3f}  {'same' if score >= face.SAME_PERSON else 'different'}")
+                print(f"  {Path(args.images[i]).name} ~ {Path(args.images[j]).name}: {shown}")
+    if args.json:
+        print(json.dumps({"threshold": face.SAME_PERSON, "images": rows, "pairs": pairs}, indent=1))
     return 0
 
 
@@ -401,6 +440,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--status", choices=tuple(library.STATUSES), help="list rules with this judge status only")
     p.add_argument("--lang", choices=("zh", "en"), help="language (default: that of the nearest spec, else en)")
     p.set_defaults(func=cmd_rules)
+
+    p = sub.add_parser("faces", help="find the faces in images and compare them pairwise (needs picspec[face])")
+    p.add_argument("images", nargs="+", help="image files")
+    p.add_argument("-o", "--out", help="folder for the face close-ups")
+    p.add_argument("--json", action="store_true", help="print JSON")
+    p.set_defaults(func=cmd_faces)
 
     p = sub.add_parser("lint", help="list the rules and report problems in the spec")
     p.add_argument("spec", nargs="?", help=f"spec file (default: nearest {SPEC_FILENAME})")

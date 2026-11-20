@@ -58,12 +58,13 @@ class Entry:
     status: str = "untested"
     note: tuple[str, str] = _NONE
     ref: tuple[str, str, str] | None = None  # path, then the note in English and Chinese
+    measure: str = ""
 
     def rule(self, lang: str = "en") -> Rule:
         i = 1 if lang == "zh" else 0
         refs = [Ref(self.ref[0], self.ref[1 + i])] if self.ref else []
         return Rule(id=self.id, text=self.text[i], kind=self.kind, check=self.check[i], expect=self.expect,
-                    level=self.level, when=self.when[i], refs=refs)
+                    level=self.level, when=self.when[i], refs=refs, measure=self.measure)
 
 
 def _e(id: str, category: str, kind: str, text: tuple[str, str], check: tuple[str, str], **kw) -> Entry:
@@ -260,9 +261,10 @@ ENTRIES: tuple[Entry, ...] = (
     _e("same-face", "consistency", "composition",
        ("The character has the same face as the reference", "人物的脸和参考图是同一个人"),
        ("Is the person's face the same person as in the reference image?", "人物的脸和参考图里的是否是同一个人？"),
-       when=_FACE, ref=("refs/character.png", "the character", "角色定妆图"), status="weak",
-       note=("In a 7-pair trial the judge called 3 of 3 different generated faces the same person.",
-             "7 对图的小测试里，3 对不同的生成人脸全被判官判成同一个人。")),
+       when=_FACE, ref=("refs/character.png", "the character", "角色定妆图"), status="weak", measure="face-match",
+       note=("In a 7-pair trial the judge called 3 of 3 different generated faces the same person. With the face "
+             "tools installed this rule is decided by a face-comparison model instead.",
+             "7 对图的小测试里，3 对不同的生成人脸全被判官判成同一个人。装了人脸工具后，这条规则改由人脸比对模型来判。")),
     _e("same-outfit", "consistency", "composition",
        ("The same outfit and hairstyle as the reference", "服装和发型与参考图一致"),
        ("Are the person's outfit and hairstyle the same as in the reference image?", "人物的服装和发型是否与参考图一致？"),

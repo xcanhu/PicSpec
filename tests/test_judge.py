@@ -93,7 +93,7 @@ def test_large_images_get_a_full_resolution_crop_for_texture_rules():
     judge = FakeJudge(ALL_GOOD)
     check_image(Image.new("RGB", (2048, 3072)), loads(SPEC), judge)
     views = judge.calls[0]["images"]
-    assert [v.size for v in views] == [(2048, 3072), (768, 768)] and "Two images" in judge.calls[0]["user"]
+    assert [v.size for v in views] == [(2048, 3072), (768, 768)] and "Image 2 is a crop from its centre" in judge.calls[0]["user"]
     judge = FakeJudge(ALL_GOOD)
     check_image(Image.new("RGB", (2048, 3072)), loads(SPEC), judge, only=["f1"])
     assert len(judge.calls[0]["images"]) == 1
@@ -269,3 +269,71 @@ def test_reference_images_are_sent_to_the_judge(tmp_path):
     judge = FakeJudge({"g": "yes"})
     check_image(IMG, spec, judge, only=["g"])
     assert len(judge.calls[0]["images"]) == 1 and "Reference images" not in judge.calls[0]["user"]
+
+
+class FakeFaces:
+    """Stands in for picspec.face.FaceTools."""
+
+    def __init__(self, score=0.8, box=(40, 10, 20, 24)):
+        self.score, self.box, self.compared = score, box, []
+
+    def detect(self, image):
+        from picspec.face import Face
+        return [Face(self.box, 0.99)] if self.box else []
+
+    def similarity(self, a, b):
+        self.compared.append((a.size, b.size))
+        return self.score
+
+
+FACE_SPEC = ("- `same` Same face as the reference\n  - check: Same person as the reference?\n"
+             "  - ref: hero.png\n  - measure: face-match >= 0.5\n- `g` Skin texture\n  - check: Pores?\n")
+
+
+def _face_spec(tmp_path, text=FACE_SPEC):
+    from picspec import load
+    Image.new("RGB", (32, 32), "red").save(tmp_path / "hero.png")
+    (tmp_path / "PICSPEC.md").write_text(text, encoding="utf-8")
+    return load(tmp_path / "PICSPEC.md")
+
+
+def test_face_match_is_measured_and_not_asked(tmp_path):
+    spec = _face_spec(tmp_path)
+    assert spec.rule("same").measurement == ("face-match", 0.5)
+    big = Image.new("RGB", (100, 200))
+    judge = FakeJudge({"g": "yes", "same": "yes"})
+    report = check_image(big, spec, judge, faces=FakeFaces(score=0.31))
+    same = report.verdicts[0]
+    assert same.status == FAIL and same.by == "face-match" and "0.31" in same.seen and "hero.png" in same.seen
+    assert [q["id"] for q in judge.calls[0]["questions"]] == ["g"]  # the judge was not asked about the face
+    assert len(judge.calls[0]["images"]) == 2 and judge.calls[0]["images"][1].size == (768, 768)
+    assert "Image 2 is a close-up of the main face" in judge.calls[0]["user"]
+    assert report.to_json()[0]["by"] == "face-match" and "by" not in report.to_json()[1]
+    assert check_image(big, spec, FakeJudge({"g": "yes"}), faces=FakeFaces(score=0.5)).ok
+
+
+def test_without_face_tools_the_judge_decides(tmp_path):
+    spec = _face_spec(tmp_path)
+    judge = FakeJudge({"g": "yes", "same": "yes"})
+    report = check_image(IMG, spec, judge, faces=None)
+    assert report.ok and report.verdicts[0].by == "judge" and len(judge.calls[0]["images"]) == 2  # image + reference
+
+
+def test_no_face_and_large_face(tmp_path):
+    spec = _face_spec(tmp_path)
+    faces = FakeFaces(score=None)
+    assert check_image(IMG, spec, FakeJudge({"g": "yes"}), faces=faces).verdicts[0].status == FAIL
+    with_when = _face_spec(tmp_path, FACE_SPEC.replace("  - measure", "  - when: a face is visible\n  - measure"))
+    assert check_image(IMG, with_when, FakeJudge({"g": "yes"}), faces=faces).verdicts[0].status == NOT_APPLICABLE
+    judge = FakeJudge({"g": "yes"})
+    check_image(Image.new("RGB", (100, 200)), spec, judge, faces=FakeFaces(box=(10, 10, 80, 120)))
+    assert len(judge.calls[0]["images"]) == 1  # the face already fills the frame: no close-up
+
+
+def test_measure_field_round_trips_and_is_validated():
+    from picspec.spec import dumps
+    spec = loads("---\nlang: zh\n---\n- `a` 同一张脸\n  - 参考图：x.png\n  - 测量：face-match\n")
+    assert spec.rule("a").measurement == ("face-match", 0.363) and "  - 测量：face-match" in dumps(spec)
+    bad = loads("- `a` x\n  - measure: magic\n")
+    assert any("measure must look like" in p.message for p in bad.errors)
+    assert any("has no \"ref\"" in p.message for p in loads("- `a` x\n  - measure: face-match\n").problems)

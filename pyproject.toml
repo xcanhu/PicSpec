@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "picspec"
-version = "0.5.0"
+version = "0.6.0"
 description = "Write down how your images should look, once. PicSpec applies it to any image model and checks every rule."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -13,6 +13,7 @@ dependencies = ["pillow>=10"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+face = ["opencv-python-headless>=4.8", "numpy"]
 
 [project.scripts]
 picspec = "picspec.cli:main"

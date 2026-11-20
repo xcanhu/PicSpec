@@ -50,7 +50,11 @@ _FIELDS: dict[str, tuple[str, ...]] = {
     "negative": ("negative", "反向", "反向提示词"),
     "ref": ("ref", "参考图", "参考"),
     "kind": ("kind", "类型"),
+    "measure": ("measure", "测量"),
 }
+# Checks done by a tool instead of the vision judge: name -> default threshold.
+MEASURES: dict[str, float] = {"face-match": 0.363}
+_MEASURE = re.compile(r"^([a-z][a-z-]*)\s*(?:(?:>=|≥)\s*(-?\d+(?:\.\d+)?))?$")
 _FIELD_LOOKUP = {alias.casefold(): name for name, aliases in _FIELDS.items() for alias in aliases}
 _ZH_FIELD = {name: aliases[1] for name, aliases in _FIELDS.items()}
 
@@ -112,8 +116,17 @@ class Rule:
     prompt: str = ""
     negative: str = ""
     refs: list[Ref] = field(default_factory=list)
+    measure: str = ""
     line: int = 0
     kind_explicit: bool = False
+
+    @property
+    def measurement(self) -> tuple[str, float] | None:
+        """(tool name, threshold) when a tool decides this rule, else ``None``."""
+        m = _MEASURE.match(self.measure.strip().casefold())
+        if not m or m.group(1) not in MEASURES:
+            return None
+        return m.group(1), float(m.group(2)) if m.group(2) else MEASURES[m.group(1)]
 
     def question(self, lang: str = "en") -> str:
         """The yes/no question a checker asks about an image for this rule."""
@@ -338,6 +351,11 @@ def _set_field(rule: Rule, content: str, ln: int, problems: list[Problem]) -> st
             rule.refs.append(Ref(path=path.strip(), note=ref_note.strip()))
         else:
             problems.append(Problem(ln, "error", "ref needs an image path"))
+    elif name == "measure":
+        rule.measure = value
+        if rule.measurement is None:
+            problems.append(Problem(ln, "error", f'measure must look like "face-match" or "face-match >= 0.4", '
+                                                 f'not "{value}". Measures are: {", ".join(MEASURES)}'))
     else:
         setattr(rule, name, value)
     return name
@@ -374,6 +392,9 @@ def _lint(spec: Spec) -> None:
             problems.append(Problem(r.line, "warning", f"rule {r.id} forbids something but expects the answer "
                                                         'yes. If the check asks whether the unwanted thing '
                                                         'is present, add "expect: no"'))
+        if r.measure and not r.refs:
+            problems.append(Problem(r.line, "warning", f"rule {r.id} measures against a reference image "
+                                                        'but has no "ref"; the judge will be asked instead'))
         if spec.path is not None:
             for ref in r.refs:
                 if not spec.ref_path(ref).is_file():
@@ -437,7 +458,7 @@ def dumps(spec: Spec) -> str:
                     fields.append(("expect", yes_no[1]))
             if r.level != "must":
                 fields.append(("level", "尽量" if zh else r.level))
-            for name in ("when", "prompt", "negative"):
+            for name in ("when", "prompt", "negative", "measure"):
                 if getattr(r, name):
                     fields.append((name, getattr(r, name)))
             fields += [("ref", f"{ref.path} | {ref.note}" if ref.note else ref.path) for ref in r.refs]
