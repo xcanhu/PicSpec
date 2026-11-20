@@ -31,6 +31,22 @@
 
 > **状态：v0.7，早期版本。** 现在可用的有：规格文件格式、gpt-image-2 和 ComfyUI 两个适配器、用视觉模型逐条核对成品图、通过编辑最好的那张图来修复没做到的规则。“从你的意见里学规则”是接下来要做的，见[路线图](#路线图)。
 
+## 图集
+
+下面是实测中的真实输出：同一个提示词不带规格、带默认规格、以及用代码修复之后。数字是工具核对出的达成规则数。
+
+| 提示词 | 裸提示词 | 带规格 | 修复后 |
+| --- | --- | --- | --- |
+| 雨后的小巷里，一个撑着伞的女人 | <img src="docs/gallery/01-bare.jpg" width="220"><br>2/6 | <img src="docs/gallery/01-spec.jpg" width="220"><br>4/7 | <img src="docs/gallery/01-repaired.jpg" width="220"><br>6/7 |
+| 地铁站台上等车的上班族 | <img src="docs/gallery/02-bare.jpg" width="220"><br>1/7 | <img src="docs/gallery/02-spec.jpg" width="220"><br>4/7 | <img src="docs/gallery/02-repaired.jpg" width="220"><br>6/7 |
+| 修自行车的中年师傅 | <img src="docs/gallery/03-bare.jpg" width="220"><br>2/7 | <img src="docs/gallery/03-spec.jpg" width="220"><br>5/7 | <img src="docs/gallery/03-repaired.jpg" width="220"><br>6/7 |
+
+一部短剧：先出角色定妆图和场景图，再以它们为参考出两张分镜关键帧。
+
+| 角色定妆图 | 场景图 | 分镜 1 | 分镜 2 |
+| --- | --- | --- | --- |
+| <img src="docs/gallery/drama-character.jpg" width="170"> | <img src="docs/gallery/drama-scene.jpg" width="230"> | <img src="docs/gallery/drama-shot1.jpg" width="170"> | <img src="docs/gallery/drama-shot2.jpg" width="170"> |
+
 ## 实测结果
 
 **十个提示词，裸提示词对比带规格。** 十个不同的人物场景（咖啡馆、厨房、地铁、花店、雪地、图书馆、夜市、山顶、海边、篮球场），每种各出一张，默认的 7 条规则，gpt-image-2 中等质量，只出一轮、不做修复，由 a vision model 核对。
@@ -377,7 +393,7 @@ result.image.save("out.png")
 1. **规格文件与适配器。** 已完成。
 2. **逐条核对与定向修复。** 已完成，包括用测量来判的规则和代码修复。
 3. **从反馈学规则。** 已完成：`picspec learn`。
-4. **更多用法。** 已完成：MCP 服务和 ComfyUI 节点。还没做：本地模型的参考图、图集。
+4. **更多用法。** 已完成：MCP 服务和 ComfyUI 节点。还没做：本地模型的参考图，以及 ComfyUI 适配器和节点的真实运行。
 5. **评测基准。** 工具已完成（`picspec bench`）。还没做：跨模型、跨规则类别的大规模评测，以及在皮肤和表情上可信的判官。
 
 ## 许可

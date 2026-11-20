@@ -31,6 +31,22 @@ Natural-light documentary portraits with the look of 35mm film.
 
 > **Status: v0.7, early.** Working today: the spec format, the gpt-image-2 and ComfyUI adapters, checking each rule on the result with a vision model, and repairing the best image by editing it. Learning rules from your feedback is next: see the [roadmap](#roadmap).
 
+## Gallery
+
+Real outputs from the runs below: the same prompt with no spec, with the starter spec, and after repair in code. Counts are rules met as checked by the tool.
+
+| Prompt | Bare prompt | With spec | After repair |
+| --- | --- | --- | --- |
+| A woman with an umbrella in an alley after rain | <img src="docs/gallery/01-bare.jpg" width="220"><br>2 of 6 | <img src="docs/gallery/01-spec.jpg" width="220"><br>4 of 7 | <img src="docs/gallery/01-repaired.jpg" width="220"><br>6 of 7 |
+| A commuter waiting on a subway platform | <img src="docs/gallery/02-bare.jpg" width="220"><br>1 of 7 | <img src="docs/gallery/02-spec.jpg" width="220"><br>4 of 7 | <img src="docs/gallery/02-repaired.jpg" width="220"><br>6 of 7 |
+| A middle-aged man repairing a bicycle | <img src="docs/gallery/03-bare.jpg" width="220"><br>2 of 7 | <img src="docs/gallery/03-spec.jpg" width="220"><br>5 of 7 | <img src="docs/gallery/03-repaired.jpg" width="220"><br>6 of 7 |
+
+A short drama: a character sheet and a setting, then two keyframes that use both as references.
+
+| Character sheet | Setting | Keyframe 1 | Keyframe 2 |
+| --- | --- | --- | --- |
+| <img src="docs/gallery/drama-character.jpg" width="170"> | <img src="docs/gallery/drama-scene.jpg" width="230"> | <img src="docs/gallery/drama-shot1.jpg" width="170"> | <img src="docs/gallery/drama-shot2.jpg" width="170"> |
+
 ## Live results
 
 **Ten prompts, bare against spec.** Ten different scenes with a person (cafe, kitchen, subway, flower shop, snow, library, night market, mountain top, seaside, basketball court), one image each way, starter spec of 7 rules, gpt-image-2 at medium quality, one round, no repair, judged by a vision model.
@@ -377,7 +393,7 @@ A backend is a small class: it declares what it supports (reference images, nega
 1. **Spec format and adapters.** Done.
 2. **Check and repair.** Done, including measured rules and repairs in code.
 3. **Learn from feedback.** Done: `picspec learn`.
-4. **More ways to use it.** Done: MCP server and ComfyUI nodes. Still open: reference images for local models, a gallery.
+4. **More ways to use it.** Done: MCP server and ComfyUI nodes. Still open: reference images for local models, and a live run of the ComfyUI adapter and nodes.
 5. **Benchmark.** The tool is done (`picspec bench`). Still open: runs at scale across models and rule categories, and a judge that can be trusted on skin and expression.
 
 ## License
