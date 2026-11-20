@@ -93,6 +93,9 @@ picspec check photo.png                          # check an image you already ha
 | `picspec generate "prompt"` | Generate images that follow the spec |
 | `picspec generate "prompt" --check` | Generate, check every rule, and repair what failed |
 | `picspec check image.png` | Check existing images against the spec, rule by rule |
+| `picspec learn "feedback"` | Turn a sentence of feedback into a proposed rule change |
+| `picspec bench prompts.txt` | Bare prompt against spec over many prompts, with per-rule pass rates |
+| `picspec mcp` | Run as an MCP server for coding agents |
 | `picspec faces a.png b.png` | Find faces and compare them pairwise (needs the face tools) |
 | `picspec audit image.png --probe ...` | Test the judge: change images in known ways and see whether its answers follow |
 
@@ -173,6 +176,18 @@ One live run with the three drama templates: a character sheet, a setting, then 
 
 gpt-image-2 kept the character, her outfit, the lane and the style in all three, and the judge agreed on outfit, place, style and light. The face comparison was the weak part: it is strict on a head turned three-quarters, and it scored a sliver of a profile that should not have been scored. Since this run, a face in profile makes the rule not applicable, and a rule can take several reference views; neither change has been tried on live images yet.
 
+## Measured rules and repairs in code
+
+A vision model is not the right tool for everything. A rule with a `measure` field is decided by a measurement instead, which costs nothing and gives the same answer every time:
+
+| Measure | What it measures | Example | Needs |
+| --- | --- | --- | --- |
+| `grain` | Fine noise in the flat areas of the image, 0 to 255 | `measure: grain >= 2` | nothing |
+| `face-share` | Height of the main face as a share of the image height. This is the shot size: about 0.06 to 0.13 is a full body, 0.18 to 0.32 is waist-up | `measure: face-share 0.18..0.32` | face tools |
+| `face-match` | Similarity between the face and the rule's `ref` image | `measure: face-match >= 0.6` | face tools |
+
+Two of these can also be **repaired in code**, before PicSpec pays for an edit or a new image. If the face is too small for the framing rule, the image is cropped around it and enlarged back to size (up to 2x). If grain is missing, it is added. The repaired image is checked again like any other and shows up as `fixed in code from round1-1.png`. Shot size is the case this was built for: gpt-image-2 ignored "waist-up" in every one of our test images, however the prompt was worded.
+
 ## Checking and retrying
 
 With `--check`, each finished image goes to a vision model together with the check question of every rule in use. For each rule the model first says what it sees, then answers yes or no, or "not applicable" when the rule's `when` condition is not true for this image. An answer that matches the rule's `expect` means the rule was met.
@@ -185,6 +200,7 @@ picspec-out/20261120-121500/best.png  (copy of round2-1.png: 7/7 rules met)
 ```
 
 - An image passes when every `must` rule that applies is met. `should` rules are reported and stressed on a retry, but do not fail an image.
+- Failures that code can repair (shot size, grain) are repaired first, at no image cost. See [measured rules](#measured-rules-and-repairs-in-code).
 - When no image in a round passes, the next round repairs the best image so far: it is sent to the model's edit endpoint with an instruction that lists what to fix and what is already right and must stay. Every rule is checked again afterwards, so a repair that breaks something else does not win.
 - Backends that cannot edit (ComfyUI for now) generate again instead, with the failed rules at the top of the prompt, marked as most important. `--repair regenerate` forces this, `--repair edit` always edits, and the default `--repair auto` edits and switches to generating again after a round of edits that made nothing better.
 - `--rounds N` sets the most rounds to run (default 3). `-n K` generates K images per round. The loop stops at the first round with a passing image, and `best.png` is the image with the fewest failed rules.
@@ -195,6 +211,49 @@ picspec-out/20261120-121500/best.png  (copy of round2-1.png: 7/7 rules met)
 The judge is set with `--judge MODEL`, the `PICSPEC_JUDGE_MODEL` variable, or a `judge:` line in the spec's settings. Its address and key come from `--judge-base-url` and `--judge-api-key`, then `PICSPEC_JUDGE_BASE_URL` and `PICSPEC_JUDGE_API_KEY`, then the OpenAI settings. The command exits with 1 when the best image still fails a `must` rule.
 
 Cost: one checked image is one image request plus one vision request. Three rounds of two images is at most six of each.
+
+## Learning rules from feedback
+
+When a result is wrong, say why once, and it becomes a rule:
+
+```bash
+picspec learn "the skin is too smooth, like a beauty filter" --image out/best.png
+```
+
+```
+add    plastic-skin: the complaint is about over-retouched skin
+add    skin-texture: asks for visible skin detail
+
++- `skin-texture` Skin keeps its natural texture: visible pores and small imperfections
++  - check: Can you see pores or fine texture on the skin?
+...
+Run again with --apply to write this to the spec.
+```
+
+A chat model reads your spec, the rule library and the feedback, then proposes the smallest change: tighten an existing rule, add a library rule, write a new one, or remove one. Nothing is written until you pass `--apply`. Feedback about one picture's content ("make her smile in this one") produces no rule. The model is the same one that checks images (`--judge`, `PICSPEC_JUDGE_MODEL`).
+
+## Agents and ComfyUI
+
+**MCP server.** `picspec mcp` speaks the Model Context Protocol over stdio, so a coding agent can apply your spec whenever it makes images:
+
+```json
+{"mcpServers": {"picspec": {"command": "picspec", "args": ["mcp"]}}}
+```
+
+It offers `picspec_rules`, `picspec_compile` (the prompt with your spec applied, for any image tool the agent has), `picspec_generate`, `picspec_check`, `picspec_learn` and `picspec_library`. Keys and models come from the same environment variables as the command line.
+
+**ComfyUI nodes.** Copy the [comfyui](comfyui) folder to `ComfyUI/custom_nodes/picspec` and install `picspec` in ComfyUI's Python. *PicSpec Prompt* turns a short prompt and a spec path into positive and negative text for your CLIP Text Encode nodes. *PicSpec Check* takes a finished image and returns the rule report and a pass flag.
+
+## Measuring what your spec changes
+
+One before/after pair proves little. `picspec bench` runs a list of prompts twice, bare and with the spec, checks every image against every rule, and prints how often each rule is met:
+
+```bash
+picspec bench examples/prompts.txt --quality medium -o bench1            # 2 image requests per prompt
+picspec bench examples/prompts.txt --quality medium --rounds 2 -o bench2  # also the result after repair
+```
+
+Results are saved after every prompt, and running the same command again continues an interrupted run. `bench.md` holds the table and the folder keeps every image.
 
 ## Auditing the judge without human labels
 
@@ -288,10 +347,10 @@ A backend is a small class: it declares what it supports (reference images, nega
 ## Roadmap
 
 1. **Spec format and adapters.** Done.
-2. **Check and repair.** Done. Next here: measure how often the judge agrees with people, and compare editing against generating again.
-3. **Learn from feedback.** Say "the face is too blurry" and PicSpec proposes a new or changed rule for you to approve.
-4. **More ways to use it.** MCP server, ComfyUI node, reference images for local models, before/after galleries.
-5. **Benchmark.** For every category in the rule library: how well image models follow the rule, and how well a vision model can check it.
+2. **Check and repair.** Done, including measured rules and repairs in code.
+3. **Learn from feedback.** Done: `picspec learn`.
+4. **More ways to use it.** Done: MCP server and ComfyUI nodes. Still open: reference images for local models, a gallery.
+5. **Benchmark.** The tool is done (`picspec bench`). Still open: runs at scale across models and rule categories, and a judge that can be trusted on skin and expression.
 
 ## License
 
