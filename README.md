@@ -148,6 +148,17 @@ picspec faces a.png b.png    # faces found, and how alike each pair is
 - **Skin and expression.** In a 1024x1536 image the face is too small for the judge to see pores: it answered "no visible skin texture" on every test image, retouched or not. With the face tools, the judge also receives a full-resolution close-up of the main face whenever the face is under 40% of the image height.
 - **Same person.** A rule with `measure: face-match` and a `ref` image is decided by a face-comparison model (cosine similarity of SFace embeddings), not by the judge. The default threshold of 0.363 is the published one for photographs of real people; generated faces tend to look alike, so set your own with `measure: face-match >= 0.5` once you have seen the scores for your characters.
 
+A first live run (7 generated portraits, faces 7% to 17% of the image height):
+
+| Question | Result |
+| --- | --- |
+| Does the default threshold separate generated faces? | No. 15 of 20 unrelated generated portraits scored 0.363 or more. They ranged from 0.22 to 0.61 |
+| Does a higher one? | Mostly. 62 of 63 lightly altered copies of the same face (mirror, crop, light blur, light grain, retouching) scored above 0.62. Heavy blur or grain pulls the same face down to 0.30, so no threshold is perfect |
+| Does the close-up help "are pores visible"? | Yes. Without it 0 of 7 originals passed; with it 4 of 7 passed, and most of their smoothed copies failed |
+| Does it help "is the skin plastic"? | Hardly. The judge still missed most smoothed faces and changed its mind between runs |
+
+The library's `same-face` rule therefore uses `face-match >= 0.6`. Treat that number as a starting point: it comes from one small set of images.
+
 Without the face tools everything still works: measured rules fall back to the judge and the command says so. Set `PICSPEC_FACE=off` to turn them off, or `PICSPEC_FACE_MODELS` to a folder holding the model files if the machine is offline.
 
 ## Checking and retrying

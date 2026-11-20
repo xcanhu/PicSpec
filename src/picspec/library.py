@@ -83,9 +83,10 @@ ENTRIES: tuple[Entry, ...] = (
        ("Skin keeps its natural texture: visible pores and small imperfections", "皮肤保留自然纹理，能看到毛孔和细小瑕疵"),
        ("Can you see pores or fine texture on the skin?", "皮肤上是否能看到毛孔或细微纹理？"), when=_FACE,
        status="weak",
-       note=("On whole 1024x1536 images the judge answered no every time, smoothed or not: the face is too small "
-             "for it to see pores.",
-             "对 1024x1536 的整图，不管有没有磨皮判官都答“否”：脸在图里太小，它看不到毛孔。")),
+       note=("Unusable on a whole 1024x1536 image: the judge answered no every time. With the face tools it gets a "
+             "close-up, and then passed 4 of 7 originals and failed most of their smoothed copies.",
+             "只看 1024x1536 的整图时不可用：判官每次都答“否”。装了人脸工具后它会收到脸部放大图，"
+             "这时 7 张原图通过 4 张，它们磨皮后的版本大多不通过。")),
     _e("loose-hair", "realism", "texture",
        ("Hair has loose strands and flyaways, not a perfectly neat outline", "头发有散落的碎发，轮廓不是一丝不乱"),
        ("Are loose strands or flyaway hairs visible?", "是否能看到散落的碎发？"), level="should", when=_PERSON),
@@ -261,10 +262,12 @@ ENTRIES: tuple[Entry, ...] = (
     _e("same-face", "consistency", "composition",
        ("The character has the same face as the reference", "人物的脸和参考图是同一个人"),
        ("Is the person's face the same person as in the reference image?", "人物的脸和参考图里的是否是同一个人？"),
-       when=_FACE, ref=("refs/character.png", "the character", "角色定妆图"), status="weak", measure="face-match",
-       note=("In a 7-pair trial the judge called 3 of 3 different generated faces the same person. With the face "
-             "tools installed this rule is decided by a face-comparison model instead.",
-             "7 对图的小测试里，3 对不同的生成人脸全被判官判成同一个人。装了人脸工具后，这条规则改由人脸比对模型来判。")),
+       when=_FACE, ref=("refs/character.png", "the character", "角色定妆图"), status="weak", measure="face-match >= 0.6",
+       note=("The judge called different generated faces the same person every time. With the face tools a "
+             "face-comparison model decides: in a live test 20 unrelated generated portraits scored 0.22 to 0.61 "
+             "and 62 of 63 lightly altered copies of the same face scored above 0.62.",
+             "判官每次都把不同的生成人脸判成同一个人。装了人脸工具后由人脸比对模型来判：实测里 20 对互不相关的生成人像得分 "
+             "0.22 到 0.61，同一张脸轻度改动后的 63 对里有 62 对高于 0.62。")),
     _e("same-outfit", "consistency", "composition",
        ("The same outfit and hairstyle as the reference", "服装和发型与参考图一致"),
        ("Are the person's outfit and hairstyle the same as in the reference image?", "人物的服装和发型是否与参考图一致？"),
