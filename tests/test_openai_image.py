@@ -92,6 +92,24 @@ def test_references_go_to_edits_as_image_array(api, tmp_path):
     assert "- Image 1: grain like this".encode() in body
 
 
+def test_repair_sends_the_image_first_then_references_of_the_failed_rules(api, tmp_path):
+    (tmp_path / "pose.png").write_bytes(png_bytes())
+    (tmp_path / "grain.png").write_bytes(png_bytes())
+    path = tmp_path / "PICSPEC.md"
+    path.write_text("---\nsize: 1024x1536\n---\n- `t1` Fine grain\n  - ref: grain.png\n"
+                    "- `c1` Waist up\n  - ref: pose.png | framing like this\n", encoding="utf-8")
+    from picspec import load
+    request = build_request(load(path), "a cat", emphasize=["c1"])
+    result = backend(api).repair(Image.new("RGB", (32, 48), (9, 9, 9)), request)
+    sent = api["requests"][0]
+    body = sent["body"]
+    assert sent["path"] == "/v1/images/edits" and body.count(b'name="image[]"') == 2
+    assert body.index(b'filename="image.png"') < body.index(b'filename="pose.png"') and b"grain.png" not in body
+    assert b'name="size"\r\n\r\n1024x1536' in body
+    assert "- Image 2: framing like this" in result.rendered.prompt and "Fix:\n- Waist up" in result.rendered.prompt
+    assert result.meta["endpoint"] == "/images/edits"
+
+
 def test_missing_reference_fails_before_any_request(api, tmp_path):
     spec = loads("- grain\n  - ref: refs/nope.png\n", path=tmp_path / "PICSPEC.md")
     with pytest.raises(FileNotFoundError, match="nope.png"):

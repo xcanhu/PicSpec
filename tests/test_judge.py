@@ -101,7 +101,8 @@ def test_large_images_get_a_full_resolution_crop_for_texture_rules():
 
 def test_loop_stresses_failed_rules_and_stops_when_met():
     judge = FakeJudge({**ALL_GOOD, "t1": "no", "f1": "yes"}, {**ALL_GOOD, "t1": "no"}, ALL_GOOD, ALL_GOOD)
-    outcome = generate_checked(loads(SPEC), "a cat", make_backend("mock"), judge, rounds=5, seed=10)
+    outcome = generate_checked(loads(SPEC), "a cat", make_backend("mock"), judge, rounds=5, seed=10,
+                               repair="regenerate")
     assert [a.round for a in outcome.attempts] == [1, 2, 3] and outcome.ok
     assert [a.stressed for a in outcome.attempts] == [[], ["t1", "f1"], ["t1"]]
     assert [a.seed for a in outcome.attempts] == [10, 11, 12]
@@ -115,6 +116,43 @@ def test_loop_gives_up_after_the_rounds_and_keeps_the_best():
     outcome = generate_checked(loads(SPEC), "a cat", make_backend("mock"), judge, rounds=2, candidates=2)
     assert len(outcome.attempts) == 4 and not outcome.ok
     assert outcome.best is outcome.attempts[1] and outcome.best.report.failed == ["t1"]
+
+
+def test_loop_repairs_the_best_image_by_editing():
+    judge = FakeJudge({**ALL_GOOD, "t1": "no", "f1": "yes"}, {**ALL_GOOD, "t1": "no"}, ALL_GOOD)
+    outcome = generate_checked(loads(SPEC), "a cat", make_backend("mock"), judge, rounds=5)
+    assert [(a.method, a.source) for a in outcome.attempts] == [("generate", None), ("edit", 0), ("edit", 1)]
+    assert outcome.ok and outcome.attempts[1].result.meta["edited"] is True
+    sent = outcome.attempts[1].result.rendered.prompt
+    assert sent.startswith("Edit the attached image (image 1), which was made for this prompt: a cat")
+    fix, keep, still = sent.index("Fix:"), sent.index("Already right, do not change:"), sent.find("Still must")
+    assert fix < sent.index("- Fine grain") < sent.index("- Remove from the image: Watermarks") < keep
+    assert keep < sent.index("Sharp face") and still == -1
+    third = outcome.attempts[2].result.rendered.prompt
+    assert "Still must not appear:\n- Watermarks" in third and "Remove from" not in third
+
+
+def test_auto_falls_back_to_generating_when_an_edit_does_not_help():
+    bad = {**ALL_GOOD, "t1": "no"}
+    outcome = generate_checked(loads(SPEC), "a cat", make_backend("mock"), FakeJudge(bad), rounds=4)
+    assert [a.method for a in outcome.attempts] == ["generate", "edit", "generate", "edit"]
+    assert [a.source for a in outcome.attempts] == [None, 0, None, 0]
+    outcome = generate_checked(loads(SPEC), "a cat", make_backend("mock"), FakeJudge(bad), rounds=3, repair="edit")
+    assert [a.method for a in outcome.attempts] == ["generate", "edit", "edit"]
+    with pytest.raises(ValueError, match="repair"):
+        generate_checked(loads(SPEC), "a cat", make_backend("mock"), FakeJudge(bad), repair="magic")
+
+
+def test_backends_that_cannot_edit_generate_again():
+    from picspec.backends.mock import MockBackend
+    from picspec.backends.base import Capabilities
+
+    class NoEdit(MockBackend):
+        caps = Capabilities(seed=True)
+
+    outcome = generate_checked(loads(SPEC), "a cat", NoEdit(), FakeJudge({**ALL_GOOD, "t1": "no"}), rounds=2)
+    assert [a.method for a in outcome.attempts] == ["generate", "generate"]
+    assert "Most important" in outcome.attempts[1].result.rendered.prompt
 
 
 @pytest.fixture
@@ -183,10 +221,12 @@ def test_cli_generate_with_check(project, monkeypatch, capsys):
     assert record["best"] == "round2-1.png" and record["judge"] == "fake-judge"
     assert [i["ok"] for i in record["images"]] == [False, False, True]
     assert record["images"][2]["stressed"] == ["t1"]
+    assert record["images"][2]["method"] == "edit" and record["images"][2]["edited_from"] == "round1-1.png"
     assert record["images"][0]["checks"][0] == {"rule": "t1", "status": "fail", "seen": "saw t1"}
     assert (project / "out" / "best.png").is_file()
     out = capsys.readouterr().out
     assert "3/4 rules met, not met: t1" in out and "4/4 rules met" in out
+    assert "round2-1.png  (edit of round1-1.png: 4/4 rules met" in out
 
 
 def test_cli_generate_reports_failure_after_all_rounds(project, monkeypatch):

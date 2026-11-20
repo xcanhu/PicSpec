@@ -244,6 +244,8 @@ def cmd_generate(args: argparse.Namespace) -> int:
             entry.update(ok=report.ok, checks=report.to_json())
         record["images"].append(entry)
         took = f", {extra['seconds']}s" if "seconds" in extra else ""
+        if "edited_from" in extra:
+            label = f"edit of {extra['edited_from']}"
         print(f"{out / filename}  ({label}{': ' + _tally(report) if report is not None else ''}{took})", flush=True)
 
     exit_code = 0
@@ -261,17 +263,21 @@ def cmd_generate(args: argparse.Namespace) -> int:
                 save(result, f"image-{i + 1}.png", "picspec", seed + i, seconds=round(time.monotonic() - started, 1))
         else:
             clock = [time.monotonic()]
+            names: list[str] = []
 
             def on_attempt(a: Attempt) -> None:
                 n = sum(1 for e in record["images"] if e.get("round") == a.round) + 1
                 now = time.monotonic()
-                save(a.result, f"round{a.round}-{n}.png", "picspec", a.seed, a.report,
-                     round=a.round, stressed=a.stressed, seconds=round(now - clock[0], 1))
+                names.append(f"round{a.round}-{n}.png")
+                edited = {"edited_from": names[a.source]} if a.source is not None else {}
+                save(a.result, names[-1], "picspec", a.seed, a.report, round=a.round, method=a.method,
+                     stressed=a.stressed, seconds=round(now - clock[0], 1), **edited)
                 clock[0] = now
 
             outcome = generate_checked(
                 spec, args.prompt, backend, judge, rounds=args.rounds or 3, candidates=args.count, seed=seed,
                 only=_ids(args.only), skip=_ids(args.skip) or (), one_by_one=args.one_by_one,
+                repair=args.repair,
                 on_attempt=on_attempt, size=_size(args.size), quality=args.quality)
             best = outcome.best
             best.image.save(out / "best.png")
@@ -343,6 +349,9 @@ def build_parser() -> argparse.ArgumentParser:
     judging(p)
     p.add_argument("--check", action="store_true",
                    help="check every rule on each image and retry with the failed rules stressed")
+    p.add_argument("--repair", choices=("auto", "edit", "regenerate"), default="auto",
+                   help="after a failed round: edit the best image, generate again with the failed rules "
+                        "stressed, or auto (edit, then generate again if editing did not help)")
     p.add_argument("--rounds", type=int, help="most rounds to run when checking (default 3; implies --check)")
     p.add_argument("-n", "--count", type=int, default=1, help="number of images, per round when checking "
                                                               "(default 1)")

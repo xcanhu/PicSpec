@@ -13,9 +13,14 @@ from .base import Backend, Capabilities, Rendered
 
 class MockBackend(Backend):
     name = "mock"
-    caps = Capabilities(max_references=4, negative_prompt=True, seed=True)
+    caps = Capabilities(max_references=4, negative_prompt=True, seed=True, edit=True)
 
     def _run(self, request: Request, rendered: Rendered) -> tuple[Image.Image, dict[str, Any]]:
         digest = hashlib.sha256(f"{rendered.prompt}|{request.seed}".encode("utf-8")).digest()
         size = request.size or (256, 256)
         return Image.new("RGB", size, tuple(digest[:3])), {"seed": request.seed}
+
+    def _edit(self, image: Image.Image, request: Request,
+              rendered: Rendered) -> tuple[Image.Image, dict[str, Any]]:
+        digest = hashlib.sha256(f"edit|{rendered.prompt}|{request.seed}".encode("utf-8")).digest()
+        return Image.new("RGB", image.size, tuple(digest[:3])), {"seed": request.seed, "edited": True}

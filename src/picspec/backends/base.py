@@ -15,6 +15,7 @@ class Capabilities:
     max_references: int = 0
     negative_prompt: bool = False
     seed: bool = False
+    edit: bool = False
 
 
 @dataclass
@@ -63,6 +64,28 @@ class Backend:
     def _run(self, request: Request, rendered: Rendered) -> tuple[Image.Image, dict[str, Any]]:
         raise NotImplementedError
 
+    def render_repair(self, request: Request) -> Rendered:
+        """What ``repair`` will send. The rules to fix are ``request.emphasize``."""
+        wanted = Request(prompt=request.prompt, emphasize=request.emphasize, lang=request.lang,
+                         references=[r for r in request.references if r.rule_id in request.emphasize])
+        kept, dropped = pick_references(wanted, max(self.caps.max_references - 1, 0))  # slot 1 is the image itself
+        return Rendered(prompt=render_repair(request, kept), references=kept, dropped=dropped)
+
+    def repair(self, image: Image.Image, request: Request) -> Result:
+        """Edit ``image`` so that the rules in ``request.emphasize`` are met, changing as little else as possible."""
+        if not self.caps.edit:
+            raise NotImplementedError(f"{self.name} cannot edit images")
+        rendered = self.render_repair(request)
+        missing = [str(r.path) for r in rendered.references if not r.path.is_file()]
+        if missing:
+            raise FileNotFoundError(f"reference image not found: {', '.join(missing)}")
+        out, meta = self._edit(image, request, rendered)
+        return Result(image=out, rendered=rendered, meta={"backend": self.name, **meta})
+
+    def _edit(self, image: Image.Image, request: Request,
+              rendered: Rendered) -> tuple[Image.Image, dict[str, Any]]:
+        raise NotImplementedError
+
 
 def pick_references(request: Request, limit: int) -> tuple[list[Reference], list[Reference]]:
     """Keep at most ``limit`` references: rules being stressed first, then must before should."""
@@ -91,6 +114,14 @@ _TEXT = {
         "when": "(only when this applies: {when}) ",
         "avoid": "Avoid: ",
         "sep": "; ",
+        "repair": "Edit the attached image (image 1), which was made for this prompt: {prompt}\n"
+                  "It is almost right. Change only what is needed to fix the points below. Keep everything else "
+                  "as it is: the same person, clothing, scene, colours and overall look.",
+        "fix": "Fix:",
+        "remove": "Remove from the image: ",
+        "keep": "Already right, do not change:",
+        "still": "Still must not appear:",
+        "repair_refs": "Further images, each a reference for one aspect only. Do not copy their content:",
     },
     "zh": {
         "summary": "整体风格：{}",
@@ -106,6 +137,14 @@ _TEXT = {
         "when": "（仅当：{when}）",
         "avoid": "避免：",
         "sep": "；",
+        "repair": "请编辑附带的图片（图 1），它是按这个提示词生成的：{prompt}\n"
+                  "这张图已经基本正确。只改动修复下列问题所必需的部分，其余全部保持原样："
+                  "同一个人物、服装、场景、色彩和整体观感。",
+        "fix": "需要修复：",
+        "remove": "从画面中去掉：",
+        "keep": "已经做到，不要改动：",
+        "still": "仍然不能出现：",
+        "repair_refs": "其余图片是参考图，每张只参考说明的那一方面，不要照搬其中的内容：",
     },
 }
 
@@ -140,6 +179,25 @@ def render_text(request: Request, references: list[Reference] | None = None) -> 
     if references:
         blocks.append("\n".join([t["refs"], *(f"- {t['ref'].format(n=n, note=r.note)}"
                                                for n, r in enumerate(references, 1))]))
+    return "\n\n".join(blocks)
+
+
+def render_repair(request: Request, references: list[Reference] | None = None) -> str:
+    """The instruction for editing an image: fix the stressed rules, leave the rest alone."""
+    t = _labels(request)
+    broken = [d for d in request.directives if d.rule_id in request.emphasize]
+    fine = [d for d in request.directives if d.rule_id not in request.emphasize]
+    blocks = [t["repair"].format(prompt=request.prompt)]
+    blocks.append("\n".join([t["fix"], *(f"- {t['remove'] if d.kind == 'forbid' else ''}{d.text}" for d in broken)]))
+    keep = [d for d in fine if d.kind != "forbid"]
+    if keep:
+        blocks.append("\n".join([t["keep"], *(f"- {_line(d, t)}" for d in keep)]))
+    still = [d for d in fine if d.kind == "forbid"]
+    if still:
+        blocks.append("\n".join([t["still"], *(f"- {d.text}" for d in still)]))
+    if references:
+        blocks.append("\n".join([t["repair_refs"], *(f"- {t['ref'].format(n=n, note=r.note)}"
+                                                    for n, r in enumerate(references, 2))]))
     return "\n\n".join(blocks)
 
 

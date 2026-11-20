@@ -29,7 +29,7 @@ Natural-light documentary portraits with the look of 35mm film.
   - expect: no
 ```
 
-> **Status: v0.2, early.** Working today: the spec format, the gpt-image-2 and ComfyUI adapters, checking each rule on the result with a vision model, and retrying with the failed rules stressed. Learning rules from your feedback is next: see the [roadmap](#roadmap).
+> **Status: v0.3, early.** Working today: the spec format, the gpt-image-2 and ComfyUI adapters, checking each rule on the result with a vision model, and repairing the best image by editing it. Learning rules from your feedback is next: see the [roadmap](#roadmap).
 
 ## First live result
 
@@ -41,7 +41,7 @@ One prompt, one run, so read this as a smoke test and not as a benchmark. With t
 | With the spec, round 1 | 6 of 7 | waist-up framing |
 | With the spec, round 2 (framing stressed) | 5 of 7 | waist-up framing, side-back light |
 
-A person looking at the images agreed with the judge on all 14 verdicts for the first two rows. Each image took about 53 seconds including its check. What it also shows: stressing a failed rule in the prompt did not fix the framing, which is why repairing the best image by editing it is next on the roadmap. The ComfyUI adapter has not been run against a live server yet.
+A person looking at the images agreed with the judge on all 14 verdicts for the first two rows. Each image took about 53 seconds including its check. What it also shows: stressing a failed rule in the prompt did not fix the framing, which is why failed rules are now repaired by editing the best image (added after this run, not yet measured). The ComfyUI adapter has not been run against a live server yet.
 
 ## Install
 
@@ -80,7 +80,7 @@ picspec check photo.png                          # check an image you already ha
 | `picspec fmt [spec]` | Rewrite the file in its standard layout and give every rule an id |
 | `picspec compile "prompt"` | Print the exact prompt, negative prompt and reference images for a backend |
 | `picspec generate "prompt"` | Generate images that follow the spec |
-| `picspec generate "prompt" --check` | Generate, check every rule, and retry with the failed rules stressed |
+| `picspec generate "prompt" --check` | Generate, check every rule, and repair what failed |
 | `picspec check image.png` | Check existing images against the spec, rule by rule |
 
 `compile` and `generate` take `--only t1,c1` and `--skip f2` to choose rules, `--size 1536x1024`, `--quality high`, and `--spec FILE`. Without `--spec`, PicSpec uses the `PICSPEC.md` in the current folder or the nearest parent folder, so one spec can cover a whole project.
@@ -97,7 +97,8 @@ picspec-out/20261120-121500/best.png  (copy of round2-1.png: 7/7 rules met)
 ```
 
 - An image passes when every `must` rule that applies is met. `should` rules are reported and stressed on a retry, but do not fail an image.
-- When no image in a round passes, the next round puts the rules that the best image failed at the top of the prompt, marked as most important. Rules that were already met are left as they were.
+- When no image in a round passes, the next round repairs the best image so far: it is sent to the model's edit endpoint with an instruction that lists what to fix and what is already right and must stay. Every rule is checked again afterwards, so a repair that breaks something else does not win.
+- Backends that cannot edit (ComfyUI for now) generate again instead, with the failed rules at the top of the prompt, marked as most important. `--repair regenerate` forces this, `--repair edit` always edits, and the default `--repair auto` edits and switches to generating again after a round of edits that made nothing better.
 - `--rounds N` sets the most rounds to run (default 3). `-n K` generates K images per round. The loop stops at the first round with a passing image, and `best.png` is the image with the fewest failed rules.
 - `--one-by-one` sends one request per rule instead of one per image. It costs more and stops one answer from colouring the next.
 - For images larger than 1536 pixels on a side, look rules such as grain and sharpness also get a full-resolution crop from the centre, because that detail disappears when the whole image is scaled down.
@@ -166,7 +167,7 @@ A backend is a small class: it declares what it supports (reference images, nega
 ## Roadmap
 
 1. **Spec format and adapters.** Done.
-2. **Check and retry.** Done. Next here: repair the best image by editing it instead of generating again, and measure how often the judge agrees with people.
+2. **Check and repair.** Done. Next here: measure how often the judge agrees with people, and compare editing against generating again.
 3. **Learn from feedback.** Say "the face is too blurry" and PicSpec proposes a new or changed rule for you to approve.
 4. **More ways to use it.** MCP server, ComfyUI node, reference images for local models, before/after galleries.
 5. **Benchmark.** How well image models follow fine-grained look instructions such as grain, sharpness and motion direction.

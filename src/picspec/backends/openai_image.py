@@ -37,7 +37,7 @@ def check_size(width: int, height: int) -> None:
 
 
 class OpenAIImageBackend(Backend):
-    caps = Capabilities(max_references=16)
+    caps = Capabilities(max_references=16, edit=True)
 
     def __init__(
         self,
@@ -73,11 +73,21 @@ class OpenAIImageBackend(Backend):
         return body
 
     def _run(self, request: Request, rendered: Rendered) -> tuple[Image.Image, dict[str, Any]]:
+        return self._send(request, rendered, [_file_part(r.path) for r in rendered.references])
+
+    def _edit(self, image: Image.Image, request: Request,
+              rendered: Rendered) -> tuple[Image.Image, dict[str, Any]]:
+        buf = io.BytesIO()
+        image.convert("RGB").save(buf, format="PNG")
+        first = ("image.png", "image/png", buf.getvalue())
+        return self._send(request, rendered, [first, *(_file_part(r.path) for r in rendered.references)])
+
+    def _send(self, request: Request, rendered: Rendered,
+              files: list[tuple[str, str, bytes]]) -> tuple[Image.Image, dict[str, Any]]:
         if not self.api_key and "api.openai.com" in self.base_url:
             raise RuntimeError("No API key. Set OPENAI_API_KEY (or PICSPEC_OPENAI_API_KEY), or pass --api-key.")
         fields = self.fields(request, rendered)
-        if rendered.references:
-            files = [_file_part(r.path) for r in rendered.references]
+        if files:
             body, content_type = encode_multipart(fields, [(self.image_field, *f) for f in files])
             path = "/images/edits"
         else:
