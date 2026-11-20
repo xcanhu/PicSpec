@@ -31,7 +31,24 @@ Natural-light documentary portraits with the look of 35mm film.
 
 > **Status: v0.6.1, early.** Working today: the spec format, the gpt-image-2 and ComfyUI adapters, checking each rule on the result with a vision model, and repairing the best image by editing it. Learning rules from your feedback is next: see the [roadmap](#roadmap).
 
-## First live results
+## Live results
+
+**Ten prompts, bare against spec.** Ten different scenes with a person (cafe, kitchen, subway, flower shop, snow, library, night market, mountain top, seaside, basketball court), one image each way, starter spec of 7 rules, gpt-image-2 at medium quality, one round, no repair, judged by a vision model.
+
+| Rule | Bare prompt | With the spec |
+| --- | --- | --- |
+| Film grain | 0/10 | 10/10 |
+| Sharp face | 8/10 | 10/10 |
+| Side-back light (should) | 2/10 | 2/10 |
+| Faces left | 5/10 | 10/10 |
+| Waist-up framing | 2/10 | 5/10 |
+| No plastic skin | 10/10 | 10/10 |
+| No text or logos | 3/10 | 9/10 |
+| **All rules** | **30/70 (43%)** | **56/70 (80%)** |
+
+The spec image met more rules than the bare one for all ten prompts. Read the rows with the judge's reliability in mind: grain, direction and text are rules the judge was verified on, so those gains are solid. The plastic-skin row is not a result, because the judge cannot see that problem. Light direction did not move at all, and framing moved only halfway, which is why framing is now repaired by cropping. One image per prompt per condition, one model, one judge.
+
+### The first smoke test
 
 Two runs of one prompt, so read this as a smoke test and not as a benchmark. Starter spec (7 rules), gpt-image-2 at 1024x1536, prompt "a young woman with an umbrella in an alley after rain" (given in Chinese).
 
