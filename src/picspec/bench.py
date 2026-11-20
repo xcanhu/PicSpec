@@ -45,20 +45,29 @@ def run(spec: Spec, prompts: list[str], backend: Backend, judge: ChatModel, out:
     if store.is_file():
         data = json.loads(store.read_text(encoding="utf-8"))
     done = {item["prompt"] for item in data["items"]}
+    data["skipped"] = []  # prompts the backend refused are tried again on every run
     say = on_step or (lambda _: None)
     for n, prompt in enumerate(prompts, 1):
         if prompt in done:
             continue
         item: dict[str, Any] = {"prompt": prompt, "n": n}
         started = time.monotonic()
-        first = build_request(spec, prompt, seed=seed + n, **request_options)
-        say(f"[{n}/{len(prompts)}] bare: {prompt}")
-        bare = backend.generate(bare_request(prompt, size=first.size, quality=first.quality, seed=seed + n))
-        bare.image.save(out / f"{n:03d}-bare.png")
-        item["bare"] = _row(check_image(bare.image, spec, judge, faces=faces))
-        say(f"[{n}/{len(prompts)}] spec")
-        outcome = generate_checked(spec, prompt, backend, judge, rounds=rounds, seed=seed + n, faces=faces,
-                                   **request_options)
+        try:
+            first = build_request(spec, prompt, seed=seed + n, **request_options)
+            say(f"[{n}/{len(prompts)}] bare: {prompt}")
+            bare = backend.generate(bare_request(prompt, size=first.size, quality=first.quality, seed=seed + n))
+            bare.image.save(out / f"{n:03d}-bare.png")
+            item["bare"] = _row(check_image(bare.image, spec, judge, faces=faces))
+            say(f"[{n}/{len(prompts)}] spec")
+            outcome = generate_checked(spec, prompt, backend, judge, rounds=rounds, seed=seed + n, faces=faces,
+                                       **request_options)
+        except KeyboardInterrupt:
+            raise
+        except Exception as e:  # one refused or failed prompt must not stop the run
+            say(f"[{n}/{len(prompts)}] skipped: {e}")
+            data["skipped"].append({"prompt": prompt, "n": n, "error": str(e)[:300]})
+            store.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+            continue
         outcome.attempts[0].image.save(out / f"{n:03d}-spec.png")
         item["spec"] = _row(outcome.attempts[0].report)
         if len(outcome.attempts) > 1:
@@ -100,6 +109,7 @@ def summarise(data: dict[str, Any], spec: Spec) -> dict[str, Any]:
     total = {c: [sum(v[c][0] for v in rules.values()), sum(v[c][1] for v in rules.values())] for c in conditions}
     return {"conditions": conditions, "prompts": len(data["items"]), "rules": rules, "all_rules": total,
             "images_meeting_every_must_rule": whole,
+            "skipped": data.get("skipped", []),
             "image_requests": sum(item.get("image_requests", 0) for item in data["items"])}
 
 
@@ -132,4 +142,6 @@ def to_markdown(summary: dict[str, Any], spec: Spec, lang: str = "en") -> str:
                      "† Decided by a measurement (when its tool is installed), not by the judge. The figure after "
                      "repair uses the same measurement: it shows the repair hit its target, not that a person "
                      "would prefer the result.")
+    for skip in summary.get("skipped", []):
+        notes.append((f"跳过了“{skip['prompt']}”：" if zh else f"Skipped \"{skip['prompt']}\": ") + skip["error"])
     return "\n".join(lines) + "\n\n" + "\n".join(notes) + "\n"

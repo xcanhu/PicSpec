@@ -62,3 +62,27 @@ def test_bench_compares_bare_and_spec_and_resumes(tmp_path, monkeypatch, capsys)
     monkeypatch.setattr(mock.MockBackend, "_run", lambda self, request, rendered: calls.append(1) or real(self, request, rendered))
     assert main(args) == 0 and calls == []  # everything was already done: nothing is generated again
     assert bench.read_prompts(tmp_path / "prompts.txt") == ["a woman reading", "an empty street"]
+
+
+def test_a_refused_prompt_is_skipped_and_noted(tmp_path):
+    from picspec import bench
+    from picspec.backends.mock import MockBackend
+    from picspec.spec import loads
+
+    class Refusing(MockBackend):
+        def generate(self, request):
+            if "bad" in request.prompt:
+                raise RuntimeError("rejected by the safety system")
+            return super().generate(request)
+
+    class Judge:
+        model = "fake"
+
+        def chat(self, system, user, images=None):
+            return '{"answers": []}'
+
+    spec = loads("---\npicspec: 1\n---\n# T\n\n## Look\n- `a` soft light\n  check: Is the light soft?\n")
+    data = bench.run(spec, ["good one", "bad one", "fine"], Refusing(), Judge(), tmp_path, faces=None)
+    assert [i["prompt"] for i in data["items"]] == ["good one", "fine"]
+    assert data["skipped"][0]["prompt"] == "bad one"
+    assert "bad one" in bench.to_markdown(bench.summarise(data, spec), spec)

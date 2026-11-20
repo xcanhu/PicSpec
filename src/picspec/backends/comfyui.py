@@ -12,6 +12,7 @@ from __future__ import annotations
 import copy
 import io
 import json
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -118,8 +119,13 @@ class ComfyUIBackend(Backend):
             raise RuntimeError(f"ComfyUI node errors: {json.dumps(queued['node_errors'])[:800]}")
         prompt_id = queued["prompt_id"]
 
-        deadline = time.monotonic() + self.timeout
+        started = time.monotonic()
+        deadline, told = started + self.timeout, started + 30
         while time.monotonic() < deadline:
+            if time.monotonic() >= told:  # the first image can take minutes while models load
+                print(f"  waiting for ComfyUI, {time.monotonic() - started:.0f}s so far "
+                      "(the first image is slow while models load)", file=sys.stderr, flush=True)
+                told = time.monotonic() + 60
             entry = json.loads(self._get(f"/history/{prompt_id}")).get(prompt_id)
             if entry:
                 status = entry.get("status", {})
