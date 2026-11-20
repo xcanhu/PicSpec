@@ -31,17 +31,27 @@ Natural-light documentary portraits with the look of 35mm film.
 
 > **Status: v0.3, early.** Working today: the spec format, the gpt-image-2 and ComfyUI adapters, checking each rule on the result with a vision model, and repairing the best image by editing it. Learning rules from your feedback is next: see the [roadmap](#roadmap).
 
-## First live result
+## First live results
 
-One prompt, one run, so read this as a smoke test and not as a benchmark. With the starter spec (7 rules), gpt-image-2 at 1024x1536 and the first judge model as the judge, for the prompt "a young woman with an umbrella in an alley after rain" (given in Chinese):
+Two runs of one prompt, so read this as a smoke test and not as a benchmark. Starter spec (7 rules), gpt-image-2 at 1024x1536, prompt "a young woman with an umbrella in an alley after rain" (given in Chinese).
 
-| Image | Rules met | Not met |
-| --- | --- | --- |
-| Bare prompt | 3 of 7 | film grain, waist-up framing, no text in frame, side-back light |
-| With the spec, round 1 | 6 of 7 | waist-up framing |
-| With the spec, round 2 (framing stressed) | 5 of 7 | waist-up framing, side-back light |
+| Run | Image | Rules met | Not met |
+| --- | --- | --- | --- |
+| 1 (judge the first judge model) | Bare prompt | 3 of 7 | film grain, waist-up framing, no text in frame, side-back light |
+| 1 | With the spec | 6 of 7 | waist-up framing |
+| 1 | Generated again, framing stressed | 5 of 7 | waist-up framing, side-back light |
+| 2 (judge a vision model) | Bare prompt | 2 of 7 | film grain, facing left, waist-up framing, no text in frame, side-back light |
+| 2 | With the spec | 5 of 7 | waist-up framing, side-back light |
+| 2 | Edit of the image above | 4 of 7 | film grain, waist-up framing, side-back light |
+| 2 | Generated again, both stressed | 6 of 7 | waist-up framing |
 
-A person looking at the images agreed with the judge on all 14 verdicts for the first two rows. Each image took about 53 seconds including its check. What it also shows: stressing a failed rule in the prompt did not fix the framing, which is why failed rules are now repaired by editing the best image (added after this run, not yet measured). The ComfyUI adapter has not been run against a live server yet.
+What this shows so far:
+
+- Applying the spec moved the bare prompt from 2 or 3 rules met to 5 or 6.
+- The waist-up framing rule failed in all seven images, whether stressed or edited. Prompt wording alone does not move this model on it.
+- The one edit repair made things worse: asked to fix two rules while keeping the rest, it fixed neither, lost the grain and shifted the colours. Editing one rule at a time, and cropping for framing rules, are the next things to try.
+- The judges were consistent: a vision model agreed with the first judge model on 20 of 21 verdicts on the run 1 images, and a person agreed with the judge on the bare-prompt and best images of both runs. Asking one rule per request flipped one more verdict, on skin texture.
+- Each image took 45 to 65 seconds including its check. The ComfyUI adapter has not been run against a live server yet.
 
 ## Install
 
