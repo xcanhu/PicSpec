@@ -187,7 +187,7 @@ ENTRIES: tuple[Entry, ...] = (
     _e("waist-up", "camera", "composition",
        ("Medium shot: the person is framed from the waist up", "中景，人物腰部以上入画"),
        ("Is this a medium shot framed from the waist up?", "画面是否是腰部以上的中景？"), when=_PERSON,
-       status="verified", measure="face-share 0.22..0.32",
+       status="verified", measure="face-share 0.16..0.32",
        note=("gpt-image-2 follows this about half the time. With the face tools it is measured by the size of "
              "the face, and an image framed too wide is cropped in code.",
              "gpt-image-2 大约一半的时候会遵守。装了人脸工具后按脸的大小来测量，拍得太远的图用代码裁切。")),

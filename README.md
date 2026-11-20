@@ -200,12 +200,12 @@ A vision model is not the right tool for everything. A rule with a `measure` fie
 | Measure | What it measures | Example | Needs |
 | --- | --- | --- | --- |
 | `grain` | Fine noise in the flat areas of the image, 0 to 255. About 3 is faint grain seen when zoomed in, 5 shows on a close look, 10 is obvious | `measure: grain >= 3` | nothing |
-| `face-share` | Height of the main face as a share of the image height. This is the shot size: about 0.06 to 0.13 is a full body, 0.22 to 0.32 is waist-up | `measure: face-share 0.22..0.32` | face tools |
+| `face-share` | Height of the main face as a share of the image height. This is the shot size: about 0.06 to 0.13 is a full body, 0.16 to 0.32 is waist-up | `measure: face-share 0.16..0.32` | face tools |
 | `face-match` | Similarity between the face and the rule's `ref` image | `measure: face-match >= 0.6` | face tools |
 
 Two of these can also be **repaired in code**, before PicSpec pays for an edit or a new image. If the face is too small for the framing rule, the image is cropped around it and enlarged back to size (up to 2x). If grain is missing, it is added. The repaired image is checked again like any other and shows up as `fixed in code from round1-1.png`. Shot size is the case this was built for: across our tests gpt-image-2 followed "waist-up" in fewer than half the images, however the prompt was worded.
 
-On four real images that failed framing or grain, three were cropped (enlarged 1.3x to 1.7x) and regrained, and came out as sensible waist-up frames that stayed acceptably sharp; the fourth needed more than 2x and was left uncropped, as designed. How far to trust the thresholds: the grain level matched the judge on all 42 audit images at 2.6, but disagreed with it on 8 of 20 fresh images, because levels between 2 and 3 are below what an eye separates at normal size. A face share under 0.15 was judged "too wide" every time, while 0.15 to 0.20 was a coin toss for the judge, so the default starts at 0.22. Both defaults rest on a few dozen images.
+On four real images that failed framing or grain, three were cropped (enlarged 1.3x to 1.7x) and regrained, and came out as sensible waist-up frames that stayed acceptably sharp; the fourth needed more than 2x and was left uncropped, as designed. How far to trust the thresholds: the grain level matched the judge on all 42 audit images at 2.6, but disagreed with it on 8 of 20 fresh images, because levels between 2 and 3 are below what an eye separates at normal size. A face share under 0.15 was judged "too wide" every time, while 0.15 to 0.20 was a coin toss for the judge, and a first default of 0.22 turned out too strict: it cropped a frame that was already a good waist-up shot at 0.17. The default is now 0.16, and a crop aims for 0.20. Both defaults rest on a few dozen images.
 
 ## Checking and retrying
 
@@ -246,10 +246,10 @@ add    skin-texture: asks for visible skin detail
 +- `skin-texture` Skin keeps its natural texture: visible pores and small imperfections
 +  - check: Can you see pores or fine texture on the skin?
 ...
-Run again with --apply to write this to the spec.
+Run `picspec learn --apply` to write exactly this change to the spec.
 ```
 
-A chat model reads your spec, the rule library and the feedback, then proposes the smallest change: tighten an existing rule, add a library rule, write a new one, or remove one. Nothing is written until you pass `--apply`. Feedback about one picture's content ("make her smile in this one") produces no rule. The model is the same one that checks images (`--judge`, `PICSPEC_JUDGE_MODEL`).
+A chat model reads your spec, the rule library and the feedback, then proposes the smallest change: tighten an existing rule, add a library rule, write a new one, or remove one. Nothing is written until you run `picspec learn --apply`, which writes the change you were shown without asking the model again. Feedback about one picture's content ("make her smile in this one") produces no rule. The model is the same one that checks images (`--judge`, `PICSPEC_JUDGE_MODEL`).
 
 ## Agents and ComfyUI
 
@@ -273,6 +273,15 @@ picspec bench examples/prompts.txt --quality medium --rounds 2 -o bench2  # also
 ```
 
 Results are saved after every prompt, and running the same command again continues an interrupted run. `bench.md` holds the table and the folder keeps every image.
+
+A live run with repair, six prompts, starter spec, medium quality:
+
+| | Bare prompt | With spec | After repair |
+| --- | --- | --- | --- |
+| All rules | 12/41 (29%) | 27/42 (64%) | 37/42 (88%) |
+| Images meeting every must rule | 0/6 | 0/6 | 6/6 |
+
+All six repairs were done in code (a crop, added grain or both), so the repair column cost no image request: 12 requests for the whole run. Two cautions. Grain and framing were decided by measurement here, with thresholds stricter than the judge, which is why "with spec" looks lower than in the ten-prompt table above. And the repair column is scored by the same measurements that drove the repair: it shows the repairs hit their targets. A person looking at the results agreed with two of three and found the third cropped tighter than it needed to be, which is what led to the looser framing default.
 
 ## Auditing the judge without human labels
 

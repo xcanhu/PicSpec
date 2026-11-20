@@ -69,14 +69,19 @@ def test_learn_command_shows_a_diff_and_writes_only_with_apply(tmp_path, monkeyp
     assert main(["learn", "皮肤太光滑"]) == 0
     out = capsys.readouterr()
     assert "add    plastic-skin: 皮肤太光滑" in out.out and "+- `plastic-skin`" in out.out and "--apply" in out.out
+    assert (tmp_path / ".picspec-learn.json").is_file()
     assert "skipped: unknown library rule" in out.err
     assert (tmp_path / "PICSPEC.md").read_text(encoding="utf-8") == SPEC
-    assert main(["learn", "皮肤太光滑", "--apply"]) == 0
+    # --apply writes the previewed proposal without asking the model again
+    monkeypatch.setattr("picspec.cli.make_judge", lambda *a, **k: Model({"changes": [], "note": "changed its mind"}))
+    assert main(["learn", "--apply"]) == 0
     assert "`plastic-skin`" in (tmp_path / "PICSPEC.md").read_text(encoding="utf-8")
+    assert not (tmp_path / ".picspec-learn.json").exists() and "已写入" in capsys.readouterr().out
+    assert main(["learn", "--apply"]) == 2  # nothing saved any more and no feedback given
     assert main(["lint"]) == 0
     monkeypatch.setattr("picspec.cli.make_judge", lambda *a, **k: Model({"changes": [], "note": "只和这一张图有关"}))
     capsys.readouterr()
     assert main(["learn", "这张让她笑一下"]) == 0
-    assert "No change to the spec is proposed." in capsys.readouterr().out
+    assert "没有需要对规格做的改动。" in capsys.readouterr().out
     monkeypatch.setattr("picspec.cli.make_judge", lambda *a, **k: Model("not json"))
     assert main(["learn", "x"]) == 2

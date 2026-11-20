@@ -54,7 +54,7 @@ def test_bench_compares_bare_and_spec_and_resumes(tmp_path, monkeypatch, capsys)
     assert summary["images_meeting_every_must_rule"] == {"bare": [0, 2], "spec": [0, 2], "repaired": [2, 2]}
     assert summary["image_requests"] == 4  # the code fix cost no image request
     table = (tmp_path / "out" / "bench.md").read_text(encoding="utf-8")
-    assert "| `g` Film grain | 0/2 (0%) | 0/2 (0%) | 2/2 (100%) |" in table and "n/a" not in table.splitlines()[2]
+    assert "| `g` Film grain † | 0/2 (0%) | 0/2 (0%) | 2/2 (100%) |" in table and "† Decided by a measurement" in table and "n/a" not in table.splitlines()[2]
     assert sorted(p.name for p in (tmp_path / "out").glob("*.png")) == [
         "001-bare.png", "001-repaired.png", "001-spec.png", "002-bare.png", "002-repaired.png", "002-spec.png"]
 

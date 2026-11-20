@@ -56,7 +56,7 @@ _FIELDS: dict[str, tuple[str, ...]] = {
 # Checks done by a tool instead of the vision judge: name -> default (lowest, highest) allowed value.
 MEASURES: dict[str, tuple[float | None, float | None]] = {
     "face-match": (0.6, None),    # similarity between the face and the rule's reference image
-    "face-share": (0.22, 0.32),   # height of the main face as a share of the image height (waist-up framing)
+    "face-share": (0.16, 0.32),   # height of the main face as a share of the image height (waist-up framing)
     "grain": (3.0, None),         # fine noise in flat areas, on a 0-255 scale
 }
 _NUM = r"(-?\d+(?:\.\d+)?)"

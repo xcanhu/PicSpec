@@ -32,7 +32,7 @@ Natural-light documentary portraits with the look of 35mm film.
 - `c2` Medium shot, from the waist up
   - check: Is this a medium shot showing the person from the waist up?
   - when: there is a person in the image
-  - measure: face-share 0.22..0.32
+  - measure: face-share 0.16..0.32
 
 ## Avoid
 

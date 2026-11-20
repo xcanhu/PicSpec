@@ -204,16 +204,22 @@ def cmd_bench(args: argparse.Namespace) -> int:
 def cmd_learn(args: argparse.Namespace) -> int:
     path = _locate(args.spec)
     spec = _load(args.spec)
-    images = []
-    for name in args.image or []:
+    zh = spec.lang == "zh"
+    memo = path.with_name(".picspec-learn.json")
+    proposal = learn.saved(spec, args.feedback, memo) if args.apply else None  # apply exactly what was previewed
+    if proposal is None:
+        if not args.feedback:
+            raise UserError("Say what was wrong, for example: picspec learn \"the skin is too smooth\"")
+        images = []
+        for name in args.image or []:
+            try:
+                images.append(Image.open(name).convert("RGB"))
+            except OSError as e:
+                raise UserError(f"cannot read {name}: {e}") from e
         try:
-            images.append(Image.open(name).convert("RGB"))
-        except OSError as e:
-            raise UserError(f"cannot read {name}: {e}") from e
-    try:
-        proposal = learn.propose(spec, args.feedback, _judge(args, spec), images)
-    except (RuntimeError, ValueError) as e:
-        raise UserError(str(e)) from e
+            proposal = learn.propose(spec, args.feedback, _judge(args, spec), images)
+        except (RuntimeError, ValueError) as e:
+            raise UserError(str(e)) from e
     after = learn.apply(spec, proposal.changes)
     if args.json:
         print(learn.to_json(proposal))
@@ -225,12 +231,16 @@ def cmd_learn(args: argparse.Namespace) -> int:
         if proposal.note:
             print(proposal.note)
         text = learn.diff(spec, after)
-        print("\n" + text if text else "No change to the spec is proposed.")
+        print("\n" + text if text else ("没有需要对规格做的改动。" if zh else "No change to the spec is proposed."))
+    log = sys.stderr if args.json else sys.stdout
     if args.apply and proposal.changes:
         path.write_text(dumps(after), encoding="utf-8")
-        print(f"\nWrote {path}.", file=sys.stderr if args.json else sys.stdout)
-    elif proposal.changes and not args.json:
-        print("\nRun again with --apply to write this to the spec.")
+        memo.unlink(missing_ok=True)
+        print(f"\n已写入 {path}。" if zh else f"\nWrote {path}.", file=log)
+    elif proposal.changes:
+        learn.save(proposal, spec, args.feedback or "", memo)
+        print("\n确认无误后运行 picspec learn --apply，写入的就是上面这份改动。" if zh else
+              "\nRun `picspec learn --apply` to write exactly this change to the spec.", file=log)
     return 0
 
 
@@ -511,10 +521,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_rules)
 
     p = sub.add_parser("learn", help="turn a sentence of feedback into a proposed change to the rules")
-    p.add_argument("feedback", help='what was wrong, in your own words, e.g. "the skin is too smooth"')
+    p.add_argument("feedback", nargs="?", help='what was wrong, in your own words, e.g. "the skin is too smooth"')
     p.add_argument("--image", action="append", help="the image the feedback is about (repeatable)")
     p.add_argument("--spec", help=f"spec file (default: nearest {SPEC_FILENAME})")
-    p.add_argument("--apply", action="store_true", help="write the change to the spec")
+    p.add_argument("--apply", action="store_true",
+                   help="write the change to the spec; after a preview this writes exactly what was shown")
     p.add_argument("--json", action="store_true", help="print JSON")
     p.set_defaults(func=cmd_learn)
     learn_parser = p

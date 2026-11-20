@@ -159,6 +159,29 @@ def diff(before: Spec, after: Spec) -> str:
     return "\n".join(difflib.unified_diff(a, b, "PICSPEC.md", "PICSPEC.md (proposed)", lineterm="", n=1))
 
 
+def digest(spec: Spec) -> str:
+    import hashlib
+    return hashlib.sha256(dumps(spec).encode()).hexdigest()[:16]
+
+
+def save(proposal: Proposal, spec: Spec, feedback: str, path: Any) -> None:
+    """Remember a previewed proposal, so that applying it later writes exactly what was shown."""
+    path.write_text(json.dumps({"feedback": feedback, "spec": digest(spec),
+                                "changes": [vars(c) for c in proposal.changes], "note": proposal.note},
+                               ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def saved(spec: Spec, feedback: str | None, path: Any) -> Proposal | None:
+    """The remembered proposal, if it was made for this spec as it stands and for this feedback."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if data.get("spec") != digest(spec) or (feedback is not None and feedback.strip() != data.get("feedback", "").strip()):
+        return None
+    return Proposal([Change(**c) for c in data.get("changes", [])], data.get("note", ""))
+
+
 def to_json(proposal: Proposal) -> str:
     return json.dumps({"changes": [vars(c) for c in proposal.changes], "note": proposal.note,
                        "skipped": proposal.skipped}, ensure_ascii=False, indent=1)

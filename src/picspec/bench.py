@@ -114,10 +114,22 @@ def to_markdown(summary: dict[str, Any], spec: Spec, lang: str = "en") -> str:
     conditions = summary["conditions"]
     lines = ["| " + " | ".join([("规则" if zh else "Rule"), *(names[c] for c in conditions)]) + " |",
              "| " + " | ".join(["---"] * (len(conditions) + 1)) + " |"]
+    measured = False
     for r in spec.rules:
-        lines.append(f"| `{r.id}` {r.text} | " + " | ".join(_cell(summary["rules"][r.id][c]) for c in conditions) + " |")
+        mark = " †" if r.measurement else ""
+        measured = measured or bool(mark)
+        lines.append(f"| `{r.id}` {r.text}{mark} | "
+                     + " | ".join(_cell(summary["rules"][r.id][c]) for c in conditions) + " |")
     lines.append(f"| **{'全部规则' if zh else 'All rules'}** | "
                  + " | ".join(_cell(summary["all_rules"][c]) for c in conditions) + " |")
     lines.append(f"| **{'所有必须项都满足的图' if zh else 'Images meeting every must rule'}** | "
                  + " | ".join(_cell(summary["images_meeting_every_must_rule"][c]) for c in conditions) + " |")
-    return "\n".join(lines) + "\n"
+    notes = ["一条规则对某张图不适用时，不计入它的分母。" if zh else
+             "A rule that does not apply to an image is left out of that rule's count."]
+    if measured:
+        notes.append("† 这条规则由测量判定（装了所需工具时），不是由判官判定；修复后的数字用的是同一个测量，"
+                     "说明修复达到了测量目标，不代表人看起来一定更好。" if zh else
+                     "† Decided by a measurement (when its tool is installed), not by the judge. The figure after "
+                     "repair uses the same measurement: it shows the repair hit its target, not that a person "
+                     "would prefer the result.")
+    return "\n".join(lines) + "\n\n" + "\n".join(notes) + "\n"

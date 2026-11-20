@@ -3,3 +3,4 @@ __pycache__/
 .pytest_cache/
 .venv/
 picspec-out/
+.picspec-learn.json

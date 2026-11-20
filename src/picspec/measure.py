@@ -15,6 +15,8 @@ from .spec import Rule, Spec
 
 # A crop is enlarged back to the original size. Past this factor the result looks soft.
 MAX_ENLARGE = 2.0
+# A crop aims this far above the lowest allowed face share, so that the result is clearly inside the range.
+CROP_MARGIN = 1.25
 _GRAIN_STEPS = (2.0, 3.0, 4.0, 6.0, 8.0, 11.0, 15.0, 20.0)
 
 
@@ -152,7 +154,7 @@ def fix(image: Image.Image, spec: Spec, failed: list[str], faces: Any) -> tuple[
             continue
         if not found:
             continue
-        target = min(low * 1.12, high) if high is not None else low * 1.12
+        target = min(low * CROP_MARGIN, high) if high is not None else low * CROP_MARGIN
         cropped = crop_to_face_share(image, found[0], target)
         if cropped is not None:
             image, done = cropped, done + [r.id]
