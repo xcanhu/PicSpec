@@ -61,7 +61,7 @@ _KIND_ZH = {"texture": "质感", "composition": "构图", "forbid": "禁忌", "o
 _KIND_VALUES = {**{k: k for k in KINDS}, **{v: k for k, v in _KIND_ZH.items()}}
 _ID_PREFIX = {"texture": "t", "composition": "c", "forbid": "f", "other": "r"}
 
-_FRONT_KNOWN = ("picspec", "name", "lang", "size", "quality", "backend")
+_FRONT_KNOWN = ("picspec", "name", "lang", "size", "quality", "backend", "judge")
 
 _BULLET = re.compile(r"^(\s*)[-*+]\s+(.*)$")
 _HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")

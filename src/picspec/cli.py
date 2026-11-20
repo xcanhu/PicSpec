@@ -11,7 +11,12 @@ from importlib import resources
 from pathlib import Path
 
 from . import __version__
-from .backends import DEFAULT_BACKEND, Backend, Rendered, make_backend
+from PIL import Image
+
+from .backends import DEFAULT_BACKEND, Backend, Rendered, Result, make_backend
+from .judge import FAIL, NOT_APPLICABLE, PASS, Report, check_image
+from .llm import OpenAIChat, make_judge
+from .loop import Attempt, generate_checked
 from .request import Request, bare_request, build_request
 from .spec import SPEC_FILENAME, Spec, SpecError, dumps, find, load, parse_size
 
@@ -73,6 +78,31 @@ def _request(args: argparse.Namespace, spec: Spec, seed: int = 0) -> Request:
                              size=_size(args.size), quality=args.quality, seed=seed)
     except KeyError as e:
         raise UserError(str(e.args[0])) from e
+
+
+def _judge(args: argparse.Namespace, spec: Spec) -> OpenAIChat:
+    try:
+        return make_judge(args.judge or spec.settings.get("judge"), args.judge_base_url, args.judge_api_key)
+    except ValueError as e:
+        raise UserError(str(e)) from e
+
+
+_MARK = {PASS: "ok  ", FAIL: "FAIL", NOT_APPLICABLE: "n/a "}
+
+
+def _print_report(spec: Spec, report: Report) -> None:
+    for v in report.verdicts:
+        rule = spec.rule(v.rule_id)
+        level = "" if rule.level == "must" else "  (should)"
+        print(f"  {_MARK.get(v.status, '??  ')} {v.rule_id:<5} {rule.text}{level}")
+        if v.seen and v.status != PASS:
+            print(f"             {v.seen}")
+
+
+def _tally(report: Report) -> str:
+    met, applied = report.counts
+    text = f"{met}/{applied} rules met"
+    return text + (f", not met: {', '.join(report.failed)}" if report.failed else "")
 
 
 def _describe(rendered: Rendered) -> str:
@@ -149,11 +179,42 @@ def cmd_compile(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_check(args: argparse.Namespace) -> int:
+    spec = _load(args.spec)
+    judge = _judge(args, spec)
+    worst = 0
+    for name in args.images:
+        try:
+            with Image.open(name) as im:
+                im.load()
+                report = check_image(im, spec, judge, only=_only(args, spec), one_by_one=args.one_by_one)
+        except (OSError, RuntimeError) as e:
+            raise UserError(f"{name}: {e}") from e
+        if args.json:
+            print(json.dumps({"image": name, "ok": report.ok, "rules": report.to_json()},
+                             ensure_ascii=False, indent=2))
+        else:
+            print(f"{name}: {_tally(report)}")
+            _print_report(spec, report)
+        worst = max(worst, 0 if report.ok else 1)
+    return worst
+
+
+def _only(args: argparse.Namespace, spec: Spec) -> list[str]:
+    """The rule ids left after --only and --skip."""
+    try:
+        return build_request(spec, "", only=_ids(args.only), skip=_ids(args.skip) or ()).rule_ids
+    except KeyError as e:
+        raise UserError(str(e.args[0])) from e
+
+
 def cmd_generate(args: argparse.Namespace) -> int:
     spec = _load(args.spec)
     backend = _backend(args, spec)
     if args.count < 1:
         raise UserError("-n must be at least 1")
+    checking = args.check or args.rounds is not None
+    judge = _judge(args, spec) if checking else None
     seed = args.seed if args.seed is not None else random.randrange(2**31)
     out = Path(args.out or Path("picspec-out") / time.strftime("%Y%m%d-%H%M%S"))
     out.mkdir(parents=True, exist_ok=True)
@@ -164,6 +225,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
         "prompt": args.prompt,
         "spec": str(spec.path),
         "backend": backend.name,
+        "judge": judge.model if judge else None,
         "rules": [{"id": r.id, "text": r.text, "kind": r.kind, "level": r.level, "when": r.when,
                    "question": r.question(spec.lang), "expect": "yes" if r.expected_answer else "no"}
                   for r in spec.rules if r.id in first.rule_ids],
@@ -172,29 +234,51 @@ def cmd_generate(args: argparse.Namespace) -> int:
     for note in backend.render(first).notes:
         print(f"note: {note}", file=sys.stderr)
 
-    def run(request: Request, filename: str, label: str) -> None:
-        started = time.monotonic()
-        result = backend.generate(request)
+    def save(result: Result, filename: str, label: str, seed: int, report: Report | None = None,
+             **extra: object) -> None:
         result.image.save(out / filename)
-        record["images"].append({
-            "file": filename, "kind": label, "seed": request.seed,
-            "prompt_sent": result.rendered.prompt, "negative_sent": result.rendered.negative,
-            "references": [str(r.path) for r in result.rendered.references],
-            "seconds": round(time.monotonic() - started, 1), **result.meta,
-        })
-        print(f"{out / filename}  ({label}, {record['images'][-1]['seconds']}s)")
+        entry = {"file": filename, "kind": label, "seed": seed,
+                 "prompt_sent": result.rendered.prompt, "negative_sent": result.rendered.negative,
+                 "references": [str(r.path) for r in result.rendered.references], **extra, **result.meta}
+        if report is not None:
+            entry.update(ok=report.ok, checks=report.to_json())
+        record["images"].append(entry)
+        print(f"{out / filename}  ({label}{': ' + _tally(report) if report is not None else ''})")
 
+    exit_code = 0
     try:
         if args.baseline:
-            run(bare_request(args.prompt, size=first.size, quality=first.quality, seed=seed),
-                "baseline.png", "baseline")
-        for i in range(args.count):
-            run(_request(args, spec, seed + i), f"image-{i + 1}.png", "picspec")
+            result = backend.generate(bare_request(args.prompt, size=first.size, quality=first.quality, seed=seed))
+            report = check_image(result.image, spec, judge, only=first.rule_ids,
+                                 one_by_one=args.one_by_one) if judge else None
+            save(result, "baseline.png", "baseline", seed, report)
+        if judge is None:
+            for i in range(args.count):
+                save(backend.generate(_request(args, spec, seed + i)), f"image-{i + 1}.png", "picspec", seed + i)
+        else:
+            def on_attempt(a: Attempt) -> None:
+                n = sum(1 for e in record["images"] if e.get("round") == a.round) + 1
+                save(a.result, f"round{a.round}-{n}.png", "picspec", a.seed, a.report,
+                     round=a.round, stressed=a.stressed)
+
+            outcome = generate_checked(
+                spec, args.prompt, backend, judge, rounds=args.rounds or 3, candidates=args.count, seed=seed,
+                only=_ids(args.only), skip=_ids(args.skip) or (), one_by_one=args.one_by_one,
+                on_attempt=on_attempt, size=_size(args.size), quality=args.quality)
+            best = outcome.best
+            best.image.save(out / "best.png")
+            record["best"] = next(e["file"] for e in record["images"]
+                                  if e.get("round") == best.round and e["seed"] == best.seed)
+            print(f"\n{out / 'best.png'}  (copy of {record['best']}: {_tally(best.report)})")
+            _print_report(spec, best.report)
+            exit_code = 0 if outcome.ok else 1
+    except KeyError as e:
+        raise UserError(str(e.args[0])) from e
     except (RuntimeError, ValueError, OSError) as e:
         raise UserError(str(e)) from e
     finally:
         (out / "run.json").write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
-    return 0
+    return exit_code
 
 
 # -- argument parsing -------------------------------------------------------
@@ -231,6 +315,16 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--only", help="apply only these rule ids, comma separated")
         p.add_argument("--skip", help="leave out these rule ids, comma separated")
 
+    def judging(p: argparse.ArgumentParser) -> None:
+        p.add_argument("--judge", help="vision model that checks the rules (default: PICSPEC_JUDGE_MODEL, "
+                                       "else the spec's judge setting)")
+        p.add_argument("--judge-base-url", help="chat API base URL for the judge "
+                                                "(default: PICSPEC_JUDGE_BASE_URL, else the OpenAI settings)")
+        p.add_argument("--judge-api-key", help="API key for the judge (default: PICSPEC_JUDGE_API_KEY, "
+                                               "else the OpenAI key)")
+        p.add_argument("--one-by-one", action="store_true",
+                       help="ask the judge one rule per request: slower, costs more, less cross-talk")
+
     p = sub.add_parser("compile", help="show exactly what would be sent to the model, without calling it")
     common(p)
     p.add_argument("--json", action="store_true", help="print JSON")
@@ -238,12 +332,26 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("generate", help="generate images that follow the spec")
     common(p)
-    p.add_argument("-n", "--count", type=int, default=1, help="number of images (default 1)")
+    judging(p)
+    p.add_argument("--check", action="store_true",
+                   help="check every rule on each image and retry with the failed rules stressed")
+    p.add_argument("--rounds", type=int, help="most rounds to run when checking (default 3; implies --check)")
+    p.add_argument("-n", "--count", type=int, default=1, help="number of images, per round when checking "
+                                                              "(default 1)")
     p.add_argument("-o", "--out", help="output folder (default: picspec-out/<time>)")
     p.add_argument("--seed", type=int, help="first seed, for backends that take one")
     p.add_argument("--baseline", action="store_true",
                    help="also generate from the bare prompt, to compare against")
     p.set_defaults(func=cmd_generate)
+
+    p = sub.add_parser("check", help="check existing images against the spec, rule by rule")
+    p.add_argument("images", nargs="+", help="image files to check")
+    p.add_argument("--spec", help=f"spec file (default: nearest {SPEC_FILENAME})")
+    p.add_argument("--only", help="check only these rule ids, comma separated")
+    p.add_argument("--skip", help="leave out these rule ids, comma separated")
+    judging(p)
+    p.add_argument("--json", action="store_true", help="print JSON")
+    p.set_defaults(func=cmd_check)
     return parser
 
 

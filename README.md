@@ -29,7 +29,7 @@ Natural-light documentary portraits with the look of 35mm film.
   - expect: no
 ```
 
-> **Status: v0.1, early.** The spec format, the backend interface, the gpt-image-2 and ComfyUI adapters and the CLI work today. Checking each rule against the result and learning rules from your feedback are next: see the [roadmap](#roadmap). The gpt-image-2 adapter is tested against a local stand-in for the API and has not yet been run against the live service.
+> **Status: v0.2, early.** Working today: the spec format, the gpt-image-2 and ComfyUI adapters, checking each rule on the result with a vision model, and retrying with the failed rules stressed. Learning rules from your feedback is next: see the [roadmap](#roadmap). Everything is tested against local stand-ins for the model APIs. It has not yet been run against a live image model or a live vision model, so there are no result numbers or comparison images yet.
 
 ## Install
 
@@ -53,6 +53,14 @@ picspec generate "a woman with an umbrella in an alley after rain" --baseline -n
 
 `generate` writes the images and a `run.json` record into `picspec-out/<time>/`. With `--baseline` it also generates from the bare prompt, so you can compare the two side by side.
 
+To have every rule checked, name a vision model and add `--check`:
+
+```bash
+export PICSPEC_JUDGE_MODEL=your-vision-model     # any model that reads images over an OpenAI-style chat API
+picspec generate "a woman with an umbrella in an alley after rain" --check --baseline
+picspec check photo.png                          # check an image you already have
+```
+
 | Command | What it does |
 | --- | --- |
 | `picspec init [path]` | Create a starter `PICSPEC.md` |
@@ -60,8 +68,32 @@ picspec generate "a woman with an umbrella in an alley after rain" --baseline -n
 | `picspec fmt [spec]` | Rewrite the file in its standard layout and give every rule an id |
 | `picspec compile "prompt"` | Print the exact prompt, negative prompt and reference images for a backend |
 | `picspec generate "prompt"` | Generate images that follow the spec |
+| `picspec generate "prompt" --check` | Generate, check every rule, and retry with the failed rules stressed |
+| `picspec check image.png` | Check existing images against the spec, rule by rule |
 
 `compile` and `generate` take `--only t1,c1` and `--skip f2` to choose rules, `--size 1536x1024`, `--quality high`, and `--spec FILE`. Without `--spec`, PicSpec uses the `PICSPEC.md` in the current folder or the nearest parent folder, so one spec can cover a whole project.
+
+## Checking and retrying
+
+With `--check`, each finished image goes to a vision model together with the check question of every rule in use. For each rule the model first says what it sees, then answers yes or no, or "not applicable" when the rule's `when` condition is not true for this image. An answer that matches the rule's `expect` means the rule was met.
+
+```
+picspec-out/20261120-121500/round1-1.png  (picspec: 5/7 rules met, not met: t1, c1)
+picspec-out/20261120-121500/round2-1.png  (picspec: 7/7 rules met)
+
+picspec-out/20261120-121500/best.png  (copy of round2-1.png: 7/7 rules met)
+```
+
+- An image passes when every `must` rule that applies is met. `should` rules are reported and stressed on a retry, but do not fail an image.
+- When no image in a round passes, the next round puts the rules that the best image failed at the top of the prompt, marked as most important. Rules that were already met are left as they were.
+- `--rounds N` sets the most rounds to run (default 3). `-n K` generates K images per round. The loop stops at the first round with a passing image, and `best.png` is the image with the fewest failed rules.
+- `--one-by-one` sends one request per rule instead of one per image. It costs more and stops one answer from colouring the next.
+- For images larger than 1536 pixels on a side, look rules such as grain and sharpness also get a full-resolution crop from the centre, because that detail disappears when the whole image is scaled down.
+- `run.json` records every image, the prompt that was sent, and each rule's verdict with what the model saw.
+
+The judge is set with `--judge MODEL`, the `PICSPEC_JUDGE_MODEL` variable, or a `judge:` line in the spec's settings. Its address and key come from `--judge-base-url` and `--judge-api-key`, then `PICSPEC_JUDGE_BASE_URL` and `PICSPEC_JUDGE_API_KEY`, then the OpenAI settings. The command exits with 1 when the best image still fails a `must` rule.
+
+Cost: one checked image is one image request plus one vision request. Three rounds of two images is at most six of each.
 
 ## Backends
 
@@ -82,7 +114,7 @@ picspec generate "a woman with an umbrella in an alley after rain" --baseline -n
 
 A spec is plain Markdown that reads well on GitHub and is easy to edit by hand.
 
-- **Settings** (optional) sit between `---` lines at the top: `size`, `quality`, `backend`, `lang` (`en` or `zh`).
+- **Settings** (optional) sit between `---` lines at the top: `size`, `quality`, `backend`, `judge`, `lang` (`en` or `zh`).
 - **The paragraph under the title** describes the overall style. It is sent with every prompt.
 - **Each `##` section** groups rules. The heading decides the kind of its rules: headings about look, quality, light or colour are *image look*; headings about subject, composition or pose are *subject and composition*; headings with "avoid", "never" or "forbidden" are *avoid*. Any other heading is a general section.
 - **Each top-level bullet is one rule.** The optional name in backticks is its id; `picspec fmt` fills in missing ids.
@@ -121,8 +153,8 @@ A backend is a small class: it declares what it supports (reference images, nega
 
 ## Roadmap
 
-1. **Spec format and adapters.** Done in v0.1: this release.
-2. **Check and retry.** A vision model answers each rule's question about the result; only the rules that failed are stressed in the next attempt.
+1. **Spec format and adapters.** Done.
+2. **Check and retry.** Done. Next here: repair the best image by editing it instead of generating again, and measure how often the judge agrees with people.
 3. **Learn from feedback.** Say "the face is too blurry" and PicSpec proposes a new or changed rule for you to approve.
 4. **More ways to use it.** MCP server, ComfyUI node, reference images for local models, before/after galleries.
 5. **Benchmark.** How well image models follow fine-grained look instructions such as grain, sharpness and motion direction.
