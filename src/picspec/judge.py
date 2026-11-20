@@ -39,6 +39,7 @@ class Verdict:
     status: str
     seen: str = ""
     level: str = "must"
+    answer: bool | None = None  # the judge's raw yes/no; None for n/a or an unusable reply
 
     @property
     def failed(self) -> bool:
@@ -137,5 +138,6 @@ def check_image(image: Image.Image, spec: Spec, judge: ChatModel, *, only: Itera
             status = PASS if (answer in _YES) == r.expected_answer else FAIL
         else:
             status = UNKNOWN
-        report.verdicts.append(Verdict(r.id, status, seen, r.level))
+        raw = (answer in _YES) if status in (PASS, FAIL) else None
+        report.verdicts.append(Verdict(r.id, status, seen, r.level, raw))
     return report

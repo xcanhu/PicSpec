@@ -29,7 +29,7 @@ Natural-light documentary portraits with the look of 35mm film.
   - expect: no
 ```
 
-> **Status: v0.3, early.** Working today: the spec format, the gpt-image-2 and ComfyUI adapters, checking each rule on the result with a vision model, and repairing the best image by editing it. Learning rules from your feedback is next: see the [roadmap](#roadmap).
+> **Status: v0.4, early.** Working today: the spec format, the gpt-image-2 and ComfyUI adapters, checking each rule on the result with a vision model, and repairing the best image by editing it. Learning rules from your feedback is next: see the [roadmap](#roadmap).
 
 ## First live results
 
@@ -92,6 +92,7 @@ picspec check photo.png                          # check an image you already ha
 | `picspec generate "prompt"` | Generate images that follow the spec |
 | `picspec generate "prompt" --check` | Generate, check every rule, and repair what failed |
 | `picspec check image.png` | Check existing images against the spec, rule by rule |
+| `picspec audit image.png --probe ...` | Test the judge: change images in known ways and see whether its answers follow |
 
 `compile` and `generate` take `--only t1,c1` and `--skip f2` to choose rules, `--size 1536x1024`, `--quality high`, and `--spec FILE`. Without `--spec`, PicSpec uses the `PICSPEC.md` in the current folder or the nearest parent folder, so one spec can cover a whole project.
 
@@ -117,6 +118,25 @@ picspec-out/20261120-121500/best.png  (copy of round2-1.png: 7/7 rules met)
 The judge is set with `--judge MODEL`, the `PICSPEC_JUDGE_MODEL` variable, or a `judge:` line in the spec's settings. Its address and key come from `--judge-base-url` and `--judge-api-key`, then `PICSPEC_JUDGE_BASE_URL` and `PICSPEC_JUDGE_API_KEY`, then the OpenAI settings. The command exits with 1 when the best image still fails a `must` rule.
 
 Cost: one checked image is one image request plus one vision request. Three rounds of two images is at most six of each.
+
+## Auditing the judge without human labels
+
+Every result above rests on the judge being right, so PicSpec can test the judge itself. `picspec audit` changes an image in a way that makes the right answer known, asks the judge again, and counts how often its answer follows.
+
+```bash
+picspec audit photo1.png photo2.png \
+    --probe flip=c1 --probe text=f2 --probe grain=t1 --probe blur=t2 --probe smooth=f1 -o audit-out
+```
+
+| Probe | What it does to the image | What the named rule's answer must do |
+| --- | --- | --- |
+| `flip` | Mirrors it | A "yes" to a left/right question must become "no"; every other rule must keep its answer |
+| `text` | Draws a line of text | Become "yes" |
+| `grain` | Adds noise at three strengths | Become "yes" at the strongest; the weaker levels show where the judge starts to notice |
+| `blur` | Blurs at three strengths | Become "no" at the strongest |
+| `smooth` | Flattens fine texture | Become "yes" |
+
+Write `--probe smooth=t1:no` when the rule's question runs the other way (smoothing must make "is grain visible?" a no). Each original is also asked about twice, which measures how often the judge contradicts itself. The output gives one line per probe and rule, such as `grain t1 6/7 correct`, and `-o` saves the changed images and every answer. These probes test whether the judge can see a property, not whether a person would like the result, and they do not cover framing or light direction yet.
 
 ## Backends
 

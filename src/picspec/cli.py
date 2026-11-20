@@ -13,6 +13,7 @@ from pathlib import Path
 from . import __version__
 from PIL import Image
 
+from .audit import PROBES, audit_judge, parse_probe
 from .backends import DEFAULT_BACKEND, Backend, Rendered, Result, make_backend
 from .judge import FAIL, NOT_APPLICABLE, PASS, Report, check_image
 from .llm import OpenAIChat, make_judge
@@ -200,6 +201,54 @@ def cmd_check(args: argparse.Namespace) -> int:
     return worst
 
 
+def cmd_audit(args: argparse.Namespace) -> int:
+    spec = _load(args.spec)
+    judge = _judge(args, spec)
+    try:
+        probes = [parse_probe(p, spec) for p in args.probe or []]
+    except KeyError as e:
+        raise UserError(f"no such rule: {e.args[0]}") from e
+    except ValueError as e:
+        raise UserError(str(e)) from e
+    if not probes:
+        lines = "\n".join(f"  {p.name:<7} {p.about} (expects {p.expect})" for p in PROBES.values())
+        raise UserError(f"Name at least one probe, as --probe PROBE=RULE. Probes:\n{lines}")
+    images = {}
+    for name in args.images:
+        try:
+            with Image.open(name) as im:
+                images[Path(name).stem] = im.convert("RGB")
+        except OSError as e:
+            raise UserError(f"{name}: {e}") from e
+    out = Path(args.out) if args.out else None
+    if out:
+        out.mkdir(parents=True, exist_ok=True)
+    try:
+        audit = audit_judge(
+            images, spec, judge, probes, repeat=not args.no_repeat, one_by_one=args.one_by_one,
+            on_step=lambda label: print(f"  asking: {label}", file=sys.stderr, flush=True),
+            keep=(lambda label, im: im.save(out / f"{label}.png")) if out else None)
+    except RuntimeError as e:
+        raise UserError(str(e)) from e
+    data = {"judge": judge.model, "one_by_one": args.one_by_one, **audit.to_json()}
+    if out:
+        (out / "audit.json").write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    if args.json:
+        print(json.dumps(data, ensure_ascii=False, indent=2))
+        return 0
+    print(f"judge: {judge.model}, {len(images)} images")
+    for row in audit.summary():
+        rule = spec.rule(row["rule"])
+        doses = "  yes at each level: " + ", ".join(f"{k:g}: {v}" for k, v in row["yes_by_level"].items()) \
+            if "yes_by_level" in row else ""
+        print(f"  {row['probe']:<7} {row['rule']:<5} {row['correct']}/{row['trials']} correct"
+              f"  ({rule.question(spec.lang)}){doses}")
+    for source, (same, total) in audit.stability().items():
+        what = "asked twice" if source == "repeat" else "other rules after mirroring"
+        print(f"  stable  {same}/{total} answers unchanged ({what})")
+    return 0
+
+
 def _only(args: argparse.Namespace, spec: Spec) -> list[str]:
     """The rule ids left after --only and --skip."""
     try:
@@ -369,6 +418,18 @@ def build_parser() -> argparse.ArgumentParser:
     judging(p)
     p.add_argument("--json", action="store_true", help="print JSON")
     p.set_defaults(func=cmd_check)
+
+    p = sub.add_parser("audit", help="test the judge itself: change images in known ways and see "
+                                     "whether its answers follow")
+    p.add_argument("images", nargs="+", help="image files to probe")
+    p.add_argument("--probe", action="append", metavar="PROBE=RULE[:yes|no]",
+                   help=f"a change and the rule it must move; repeat for more. Probes: {', '.join(PROBES)}")
+    p.add_argument("--spec", help=f"spec file (default: nearest {SPEC_FILENAME})")
+    p.add_argument("--no-repeat", action="store_true", help="skip asking about each original twice")
+    p.add_argument("-o", "--out", help="folder for the changed images and audit.json")
+    judging(p)
+    p.add_argument("--json", action="store_true", help="print JSON")
+    p.set_defaults(func=cmd_audit)
     return parser
 
 
