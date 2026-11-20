@@ -53,7 +53,7 @@ _FIELDS: dict[str, tuple[str, ...]] = {
     "measure": ("measure", "测量"),
 }
 # Checks done by a tool instead of the vision judge: name -> default threshold.
-MEASURES: dict[str, float] = {"face-match": 0.363}
+MEASURES: dict[str, float] = {"face-match": 0.6}
 _MEASURE = re.compile(r"^([a-z][a-z-]*)\s*(?:(?:>=|≥)\s*(-?\d+(?:\.\d+)?))?$")
 _FIELD_LOOKUP = {alias.casefold(): name for name, aliases in _FIELDS.items() for alias in aliases}
 _ZH_FIELD = {name: aliases[1] for name, aliases in _FIELDS.items()}

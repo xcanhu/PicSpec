@@ -99,7 +99,8 @@ def _print_report(spec: Spec, report: Report) -> None:
     for v in report.verdicts:
         rule = spec.rule(v.rule_id)
         level = "" if rule.level == "must" else "  (should)"
-        print(f"  {_MARK.get(v.status, '??  ')} {v.rule_id:<5} {rule.text}{level}")
+        avoid = ("不要：" if spec.lang == "zh" else "avoid: ") if rule.kind == "forbid" else ""
+        print(f"  {_MARK.get(v.status, '??  ')} {v.rule_id:<5} {avoid}{rule.text}{level}")
         if v.seen and (v.status != PASS or v.by != "judge"):
             print(f"             {v.seen}")
 
@@ -178,8 +179,11 @@ def cmd_faces(args: argparse.Namespace) -> int:
             images.append(Image.open(name).convert("RGB"))
         except OSError as e:
             raise UserError(f"cannot read {name}: {e}") from e
+    stems = [Path(n).stem for n in args.images]
+    labels = [stem if stems.count(stem) == 1 else "-".join(Path(n).with_suffix("").parts[-3:])
+              for n, stem in zip(args.images, stems)]
     rows = []
-    for name, image in zip(args.images, images):
+    for name, image in zip(labels, images):
         found = tools.detect(image)
         share = f", largest is {found[0].box[3] / image.height:.0%} of the image height" if found else ""
         rows.append({"image": name, "faces": len(found), "box": list(found[0].box) if found else None})
@@ -188,18 +192,18 @@ def cmd_faces(args: argparse.Namespace) -> int:
         if found and args.out:
             out = Path(args.out)
             out.mkdir(parents=True, exist_ok=True)
-            face.face_crop(image, found[0]).save(out / f"{Path(name).stem}.face.png")
+            face.face_crop(image, found[0]).save(out / f"{name}.face.png")
     pairs = []
     for i in range(len(images)):
         for j in range(i + 1, len(images)):
             score = tools.similarity(images[i], images[j])
-            pairs.append({"a": args.images[i], "b": args.images[j], "similarity": score})
+            pairs.append({"a": labels[i], "b": labels[j], "similarity": score})
             if not args.json:
                 shown = ("no face" if score is None
-                         else f"{score:.3f}  {'same' if score >= face.SAME_PERSON else 'different'}")
-                print(f"  {Path(args.images[i]).name} ~ {Path(args.images[j]).name}: {shown}")
+                         else f"{score:.3f}  {'same' if score >= args.threshold else 'different'}")
+                print(f"  {labels[i]} ~ {labels[j]}: {shown}")
     if args.json:
-        print(json.dumps({"threshold": face.SAME_PERSON, "images": rows, "pairs": pairs}, indent=1))
+        print(json.dumps({"threshold": args.threshold, "images": rows, "pairs": pairs}, indent=1))
     return 0
 
 
@@ -444,6 +448,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("faces", help="find the faces in images and compare them pairwise (needs picspec[face])")
     p.add_argument("images", nargs="+", help="image files")
     p.add_argument("-o", "--out", help="folder for the face close-ups")
+    p.add_argument("--threshold", type=float, default=face.SAME_PERSON,
+                   help=f"similarity that counts as the same person (default {face.SAME_PERSON})")
     p.add_argument("--json", action="store_true", help="print JSON")
     p.set_defaults(func=cmd_faces)
 

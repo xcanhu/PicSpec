@@ -119,35 +119,46 @@ def _measure(image: Image.Image, rule: Rule, spec: Spec, faces: Any) -> tuple[st
     if wanted is None or faces is None:
         return None
     name, threshold = wanted
+    try:
+        found = faces.detect(image)
+    except Exception:
+        return None
+    usable = [f for f in found if not getattr(f, "profile", False)]
+    if not usable:
+        why = "the face is turned too far to compare" if found else "no face was found to compare"
+        return ("na" if rule.when else ("no" if rule.expect else "yes")), why, name
+    best: tuple[float, str] | None = None  # several references (front, three-quarter view...): the closest counts
     for ref in rule.refs:
         try:
-            reference = Image.open(spec.ref_path(ref)).convert("RGB")
-            score = faces.similarity(image, reference)
+            score = faces.similarity(image, Image.open(spec.ref_path(ref)).convert("RGB"))
         except Exception:
             continue
-        if score is None:
-            if rule.when:
-                return "na", "no face was found to compare", name
-            return ("no" if rule.expect else "yes"), "no face was found to compare", name
-        same = score >= threshold
-        return ("yes" if same else "no",
-                f"face similarity {score:.2f} against {ref.path}; {threshold:.2f} or more counts as the same person",
-                name)
-    return None
+        if score is not None and (best is None or score > best[0]):
+            best = (score, ref.path)
+    if best is None:
+        return None
+    return ("yes" if best[0] >= threshold else "no",
+            f"face similarity {best[0]:.2f} against {best[1]}; {threshold:.2f} or more counts as the same person",
+            name)
 
 
-def _references(rules: list[Rule], spec: Spec) -> list[tuple[Rule, str, Image.Image]]:
-    """Reference images the judge should compare against: (rule, note, image), files that exist only."""
-    found: list[tuple[Rule, str, Image.Image]] = []
+def _references(rules: list[Rule], spec: Spec) -> list[tuple[list[str], Image.Image]]:
+    """Reference images the judge should compare against, one per file: (ids of the questions it serves, image)."""
+    found: dict[str, tuple[list[str], Image.Image]] = {}
     for r in rules:
         for ref in r.refs:
+            key = str(spec.ref_path(ref))
+            if key in found:
+                if r.id not in found[key][0]:
+                    found[key][0].append(r.id)
+                continue
             if len(found) == MAX_REFERENCES:
-                return found
+                continue
             try:
-                found.append((r, ref.note, Image.open(spec.ref_path(ref)).convert("RGB")))
+                found[key] = ([r.id], Image.open(key).convert("RGB"))
             except OSError:
                 continue
-    return found
+    return list(found.values())
 
 
 def _ask(image: Image.Image, rules: list[Rule], judge: ChatModel, spec: Spec,
@@ -161,11 +172,11 @@ def _ask(image: Image.Image, rules: list[Rule], judge: ChatModel, spec: Spec,
             + "Questions:\n" + json.dumps(questions, ensure_ascii=False, indent=1)
             + ("\n\n" + view_note if view_note else ""))
     if refs:
-        lines = [f"- image {len(views) + n}: reference for question {r.id}" + (f" ({note})" if note else "")
-                 for n, (r, note, _) in enumerate(refs, 1)]
+        lines = [f"- image {len(views) + n}: reference for question{'s' if len(ids) > 1 else ''} {', '.join(ids)}"
+                 for n, (ids, _) in enumerate(refs, 1)]
         user += "\n\n" + _REF_NOTE + "\n" + "\n".join(lines)
     try:
-        data = extract_json(judge.chat(_SYSTEM, user, images=views + [im for _, _, im in refs]))
+        data = extract_json(judge.chat(_SYSTEM, user, images=views + [im for _, im in refs]))
     except ValueError:
         return {}
     answers = data.get("answers") if isinstance(data, dict) else None

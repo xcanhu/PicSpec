@@ -29,7 +29,7 @@ Natural-light documentary portraits with the look of 35mm film.
   - expect: no
 ```
 
-> **Status: v0.6, early.** Working today: the spec format, the gpt-image-2 and ComfyUI adapters, checking each rule on the result with a vision model, and repairing the best image by editing it. Learning rules from your feedback is next: see the [roadmap](#roadmap).
+> **Status: v0.6.1, early.** Working today: the spec format, the gpt-image-2 and ComfyUI adapters, checking each rule on the result with a vision model, and repairing the best image by editing it. Learning rules from your feedback is next: see the [roadmap](#roadmap).
 
 ## First live results
 
@@ -146,20 +146,32 @@ picspec faces a.png b.png    # faces found, and how alike each pair is
 ```
 
 - **Skin and expression.** In a 1024x1536 image the face is too small for the judge to see pores: it answered "no visible skin texture" on every test image, retouched or not. With the face tools, the judge also receives a full-resolution close-up of the main face whenever the face is under 40% of the image height.
-- **Same person.** A rule with `measure: face-match` and a `ref` image is decided by a face-comparison model (cosine similarity of SFace embeddings), not by the judge. The default threshold of 0.363 is the published one for photographs of real people; generated faces tend to look alike, so set your own with `measure: face-match >= 0.5` once you have seen the scores for your characters.
+- **Same person.** A rule with `measure: face-match` and a `ref` image is decided by a face-comparison model (cosine similarity of SFace embeddings), not by the judge. The score must reach 0.6 by default; set your own with `measure: face-match >= 0.5`. Give the rule several `ref` lines (front, three-quarter view, profile) and the closest one counts. A face turned too far to compare makes the rule not applicable.
 
 A first live run (7 generated portraits, faces 7% to 17% of the image height):
 
 | Question | Result |
 | --- | --- |
-| Does the default threshold separate generated faces? | No. 15 of 20 unrelated generated portraits scored 0.363 or more. They ranged from 0.22 to 0.61 |
+| Does SFace's published threshold of 0.363 separate generated faces? | No. 15 of 20 unrelated generated portraits scored 0.363 or more. They ranged from 0.22 to 0.61 |
 | Does a higher one? | Mostly. 62 of 63 lightly altered copies of the same face (mirror, crop, light blur, light grain, retouching) scored above 0.62. Heavy blur or grain pulls the same face down to 0.30, so no threshold is perfect |
 | Does the close-up help "are pores visible"? | Yes. Without it 0 of 7 originals passed; with it 4 of 7 passed, and most of their smoothed copies failed |
 | Does it help "is the skin plastic"? | Hardly. The judge still missed most smoothed faces and changed its mind between runs |
 
-The library's `same-face` rule therefore uses `face-match >= 0.6`. Treat that number as a starting point: it comes from one small set of images.
+PicSpec therefore uses 0.6. Treat that number as a starting point: it comes from one small set of images, and it is strict on turned heads (see the short drama run below).
 
 Without the face tools everything still works: measured rules fall back to the judge and the command says so. Set `PICSPEC_FACE=off` to turn them off, or `PICSPEC_FACE_MODELS` to a folder holding the model files if the machine is offline.
+
+### A short drama, end to end
+
+One live run with the three drama templates: a character sheet, a setting, then three 9:16 keyframes that take both as reference images (5 image requests, about two minutes each at high quality).
+
+| Keyframe | Rules met | Face similarity to the sheet | Looking at the image |
+| --- | --- | --- | --- |
+| She walks into the lane, seen from the front | 9 of 9 | 0.75, pass | Same woman, same lane |
+| She looks back over her shoulder | 8 of 9 | 0.54, fail | Same woman, same lane: the tool was wrong |
+| Seen from behind, at a door | 7 of 9 | 0.29, fail | Same hair and coat; the face is barely visible |
+
+gpt-image-2 kept the character, her outfit, the lane and the style in all three, and the judge agreed on outfit, place, style and light. The face comparison was the weak part: it is strict on a head turned three-quarters, and it scored a sliver of a profile that should not have been scored. Since this run, a face in profile makes the rule not applicable, and a rule can take several reference views; neither change has been tried on live images yet.
 
 ## Checking and retrying
 

@@ -26,9 +26,9 @@ MODELS: dict[str, tuple[str, tuple[str, ...]]] = {
         _ZOO + "face_recognition_sface/face_recognition_sface_2021dec.onnx",
         _HF + "face_recognition_sface/resolve/main/face_recognition_sface_2021dec.onnx")),
 }
-# Cosine similarity at or above this means "same person" for SFace on photographs of real people
-# (the value its authors publish). Generated faces resemble each other more, so rules may set their own.
-SAME_PERSON = 0.363
+# Cosine similarity at or above this counts as the same person. SFace's authors publish 0.363 for photographs
+# of real people, but unrelated generated faces scored up to 0.61 in our tests, so the default is higher.
+SAME_PERSON = 0.6
 _MIN_BYTES = 100_000  # anything smaller is an error page or a Git LFS pointer, not a model
 
 
@@ -41,6 +41,18 @@ class Face:
     box: tuple[int, int, int, int]  # left, top, width, height in pixels
     score: float
     raw: Any = None  # the detector's own row, needed to align the face for comparison
+
+    @property
+    def profile(self) -> bool:
+        """True when the head is turned so far that the face cannot be compared: the nose lies outside
+        the eyes, or the two eyes almost coincide."""
+        if self.raw is None:
+            return False
+        eye_a, eye_b, nose = float(self.raw[4]), float(self.raw[6]), float(self.raw[8])
+        low, high = min(eye_a, eye_b), max(eye_a, eye_b)
+        if high - low < 0.15 * self.box[2]:
+            return True
+        return not 0.1 <= (nose - low) / (high - low) <= 0.9
 
     @property
     def area(self) -> int:
@@ -81,6 +93,10 @@ class FaceTools:
         except ImportError as e:
             raise FaceToolsMissing("face tools need OpenCV: pip install 'picspec[face]'") from e
         self._cv2, self._np = cv2, np
+        try:
+            cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_ERROR)  # hide per-load backend notices
+        except Exception:
+            pass
         self._detector = cv2.FaceDetectorYN.create(str(_fetch("detect")), "", (320, 320), min_score, 0.3, 5000)
         self._recognizer = None
 
@@ -109,7 +125,7 @@ class FaceTools:
 
     def similarity(self, a: Image.Image, b: Image.Image) -> float | None:
         """Cosine similarity between the largest face in each image, or ``None`` if either has no face."""
-        fa, fb = self.detect(a), self.detect(b)
+        fa, fb = self.detect(a), self.detect(b)  # largest face in each
         if not fa or not fb:
             return None
         ea, eb = self.embedding(a, fa[0]), self.embedding(b, fb[0])

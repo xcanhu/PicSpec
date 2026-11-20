@@ -265,7 +265,7 @@ def test_reference_images_are_sent_to_the_judge(tmp_path):
     assert check_image(IMG, spec, judge).ok
     call = judge.calls[0]
     assert len(call["images"]) == 2 and call["images"][1].getpixel((0, 0)) == (255, 0, 0)
-    assert "image 2: reference for question same (the lead character)" in call["user"]
+    assert "image 2: reference for question same" in call["user"]
     judge = FakeJudge({"g": "yes"})
     check_image(IMG, spec, judge, only=["g"])
     assert len(judge.calls[0]["images"]) == 1 and "Reference images" not in judge.calls[0]["user"]
@@ -321,7 +321,7 @@ def test_without_face_tools_the_judge_decides(tmp_path):
 
 def test_no_face_and_large_face(tmp_path):
     spec = _face_spec(tmp_path)
-    faces = FakeFaces(score=None)
+    faces = FakeFaces(box=None)
     assert check_image(IMG, spec, FakeJudge({"g": "yes"}), faces=faces).verdicts[0].status == FAIL
     with_when = _face_spec(tmp_path, FACE_SPEC.replace("  - measure", "  - when: a face is visible\n  - measure"))
     assert check_image(IMG, with_when, FakeJudge({"g": "yes"}), faces=faces).verdicts[0].status == NOT_APPLICABLE
@@ -333,7 +333,46 @@ def test_no_face_and_large_face(tmp_path):
 def test_measure_field_round_trips_and_is_validated():
     from picspec.spec import dumps
     spec = loads("---\nlang: zh\n---\n- `a` 同一张脸\n  - 参考图：x.png\n  - 测量：face-match\n")
-    assert spec.rule("a").measurement == ("face-match", 0.363) and "  - 测量：face-match" in dumps(spec)
+    assert spec.rule("a").measurement == ("face-match", 0.6) and "  - 测量：face-match" in dumps(spec)
     bad = loads("- `a` x\n  - measure: magic\n")
     assert any("measure must look like" in p.message for p in bad.errors)
     assert any("has no \"ref\"" in p.message for p in loads("- `a` x\n  - measure: face-match\n").problems)
+
+
+def test_turned_faces_are_not_compared_and_the_closest_reference_counts(tmp_path):
+    from picspec.face import Face
+
+    class Turned(FakeFaces):
+        def detect(self, image):  # eyes at x=50 and 52, nose at 70: a profile
+            return [Face((40, 10, 20, 24), 0.9, [40, 10, 20, 24, 50, 18, 52, 18, 70, 24, 0, 0, 0, 0, 0.9])]
+
+    assert not Face((40, 10, 20, 24), 0.9, [40, 10, 20, 24, 44, 18, 56, 18, 50, 24, 0, 0, 0, 0, 0.9]).profile
+    text = FACE_SPEC.replace("  - measure", "  - when: a face is visible\n  - ref: side.png\n  - measure")
+    spec = _face_spec(tmp_path, text)
+    Image.new("RGB", (48, 32), "blue").save(tmp_path / "side.png")
+    turned = check_image(IMG, spec, FakeJudge({"g": "yes"}), faces=Turned()).verdicts[0]
+    assert turned.status == NOT_APPLICABLE and "turned too far" in turned.seen
+
+    class TwoViews(FakeFaces):
+        def similarity(self, a, b):
+            return 0.3 if b.size == (32, 32) else 0.7  # the front view is a poor match, the side view a good one
+
+    judge = FakeJudge({"g": "yes"})
+    best = check_image(IMG, spec, judge, faces=TwoViews()).verdicts[0]
+    assert best.status == PASS and "0.70 against side.png" in best.seen
+
+
+def test_one_reference_file_is_sent_once(tmp_path):
+    from picspec import load
+    from picspec.backends.base import pick_references
+    from picspec.request import build_request
+    Image.new("RGB", (32, 32)).save(tmp_path / "scene.png")
+    (tmp_path / "PICSPEC.md").write_text(
+        "- `a` Same place\n  - check: Same place?\n  - ref: scene.png | the buildings\n"
+        "- `b` Same style\n  - check: Same style?\n  - ref: scene.png | the colours\n", encoding="utf-8")
+    spec = load(tmp_path / "PICSPEC.md")
+    kept, dropped = pick_references(build_request(spec, "x"), 16)
+    assert [(r.path.name, r.note) for r in kept] == [("scene.png", "the buildings; the colours")] and not dropped
+    judge = FakeJudge({"a": "yes", "b": "yes"})
+    check_image(IMG, spec, judge, faces=None)
+    assert len(judge.calls[0]["images"]) == 2 and "reference for questions a, b" in judge.calls[0]["user"]

@@ -92,10 +92,17 @@ def pick_references(request: Request, limit: int) -> tuple[list[Reference], list
     stressed = set(request.emphasize)
     ranked = sorted(request.references,
                     key=lambda r: (r.rule_id not in stressed, r.level != "must"))  # stable sort keeps file order
-    kept = ranked[:max(limit, 0)]
-    kept_ids = {id(r) for r in kept}
-    return ([r for r in request.references if id(r) in kept_ids],
-            [r for r in request.references if id(r) not in kept_ids])
+    merged: dict[str, Reference] = {}  # one entry per file, however many rules point at it
+    for r in ranked:
+        first = merged.get(str(r.path))
+        if first is None:
+            merged[str(r.path)] = Reference(r.path, r.note, r.rule_id, r.level)
+        elif r.note and r.note not in first.note.split("; "):
+            first.note = f"{first.note}; {r.note}" if first.note else r.note
+    unique = list(merged.values())
+    order = {str(r.path): n for n, r in reversed(list(enumerate(request.references)))}  # file order of first use
+    kept = sorted(unique[:max(limit, 0)], key=lambda r: order[str(r.path)])
+    return kept, unique[max(limit, 0):]
 
 
 _TEXT = {

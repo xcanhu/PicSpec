@@ -262,7 +262,7 @@ ENTRIES: tuple[Entry, ...] = (
     _e("same-face", "consistency", "composition",
        ("The character has the same face as the reference", "人物的脸和参考图是同一个人"),
        ("Is the person's face the same person as in the reference image?", "人物的脸和参考图里的是否是同一个人？"),
-       when=_FACE, ref=("refs/character.png", "the character", "角色定妆图"), status="weak", measure="face-match >= 0.6",
+       when=_FACE, ref=("refs/character.png", "the character's face", "角色的脸"), status="weak", measure="face-match >= 0.6",
        note=("The judge called different generated faces the same person every time. With the face tools a "
              "face-comparison model decides: in a live test 20 unrelated generated portraits scored 0.22 to 0.61 "
              "and 62 of 63 lightly altered copies of the same face scored above 0.62.",
@@ -271,19 +271,19 @@ ENTRIES: tuple[Entry, ...] = (
     _e("same-outfit", "consistency", "composition",
        ("The same outfit and hairstyle as the reference", "服装和发型与参考图一致"),
        ("Are the person's outfit and hairstyle the same as in the reference image?", "人物的服装和发型是否与参考图一致？"),
-       when=_PERSON, ref=("refs/character.png", "the character", "角色定妆图")),
+       when=_PERSON, ref=("refs/character.png", "the character's outfit and hairstyle", "角色的服装和发型")),
     _e("same-place", "consistency", "composition",
        ("The setting is the place shown in the reference: the same buildings and layout", "场景就是参考图里的地方：建筑和布局相同"),
        ("Is the setting the same place as in the reference image?", "场景是否与参考图是同一个地方？"),
-       ref=("refs/scene.png", "the setting", "场景图")),
+       ref=("refs/scene.png", "the buildings and layout of the setting", "场景的建筑和布局")),
     _e("same-light", "consistency", "texture",
        ("The same light direction and time of day as the reference", "光线方向和时间段与参考图一致"),
        ("Do the light direction and time of day match the reference image?", "光线方向和时间段是否与参考图一致？"),
-       level="should", ref=("refs/scene.png", "the setting", "场景图")),
+       level="should", ref=("refs/scene.png", "light direction and time of day", "光线方向和时间段")),
     _e("same-style", "consistency", "texture",
        ("The same rendering style and colour grading as the reference", "画风和色调与参考图一致"),
        ("Do the rendering style and colour grading match the reference image?", "画风和色调是否与参考图一致？"),
-       ref=("refs/scene.png", "the setting", "场景图")),
+       ref=("refs/scene.png", "rendering style and colour grading", "画风和色调")),
 )
 
 _BY_ID = {e.id: e for e in ENTRIES}
@@ -351,8 +351,8 @@ TEMPLATES: dict[str, Template] = {
         ("A character reference image for a short drama: one character, clearly lit, easy to reuse in later shots.",
          "短剧的角色定妆图：单个角色，光线清楚，方便在后续镜头里复用。"),
         "1024x1536",
-        ("soft-studio-light", "sharp-face", "skin-texture", "one-person", "full-body", "neutral-pose",
-         "neutral-expression", "plain-background", "plastic-skin", "bad-hands", "text"),
+        ("soft-studio-light", "sharp-face", "one-person", "full-body", "neutral-pose",
+         "neutral-expression", "plain-background", "bad-hands", "text"),
     ),
     "drama-scene": Template(
         ("Short drama: scene and architecture", "短剧：场景与建筑"),
