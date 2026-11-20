@@ -138,6 +138,19 @@ picspec audit photo1.png photo2.png \
 
 Write `--probe smooth=t1:no` when the rule's question runs the other way (smoothing must make "is grain visible?" a no). Each original is also asked about twice, which measures how often the judge contradicts itself. The output gives one line per probe and rule, such as `grain t1 6/7 correct`, and `-o` saves the changed images and every answer. These probes test whether the judge can see a property, not whether a person would like the result, and they do not cover framing or light direction yet.
 
+A first live audit (7 generated images, 84 vision requests, one judge model):
+
+| Probe | Rule | Result |
+| --- | --- | --- |
+| `flip` | faces left | 6/6 correct (the seventh image had no "yes" to invert) |
+| `text` | no text | 7/7 |
+| `grain` | visible grain | 7/7 at every strength, including the weakest, which a person only sees when zoomed in |
+| `blur` | sharp face | 7/7 at every strength |
+| `smooth` | no grain left | 7/7 |
+| `smooth` | plastic skin | 2/7 at the weak level, 5/7 at the strong one |
+
+Asked twice about an unchanged image, the judge repeated 48 of 49 answers. After mirroring, 37 of 42 answers on rules that should not care about direction stayed the same. Two lessons: the judge calls grain "visible" below the level a person notices at normal viewing size, and the `smooth` probe is a poor test of over-retouched skin, because it smears the whole frame instead of only the skin, so the judge's "no" is often defensible.
+
 ## Backends
 
 | Backend | How to select it | Reference images | Negative prompt | Seed |
