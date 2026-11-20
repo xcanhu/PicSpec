@@ -15,6 +15,7 @@ from PIL import Image
 
 from .audit import PROBES, audit_judge, parse_probe
 from .backends import DEFAULT_BACKEND, Backend, Rendered, Result, make_backend
+from . import library
 from .judge import FAIL, NOT_APPLICABLE, PASS, Report, check_image
 from .llm import OpenAIChat, make_judge
 from .loop import Attempt, generate_checked
@@ -123,10 +124,43 @@ def cmd_init(args: argparse.Namespace) -> int:
         target = target / SPEC_FILENAME
     if target.exists() and not args.force:
         raise UserError(f"{target} already exists. Pass --force to overwrite it.")
-    template = resources.files("picspec").joinpath("templates").joinpath(f"{args.lang}.md").read_text(encoding="utf-8")
+    if args.template == "starter":
+        template = (resources.files("picspec").joinpath("templates").joinpath(f"{args.lang}.md")
+                    .read_text(encoding="utf-8"))
+    else:
+        template = dumps(library.TEMPLATES[args.template].spec(args.lang))
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(template, encoding="utf-8")
     print(f"Wrote {target}. Edit the rules, then run: picspec generate \"your prompt\"")
+    return 0
+
+
+def cmd_rules(args: argparse.Namespace) -> int:
+    lang = args.lang
+    if lang is None:
+        found = find()
+        lang = load(found, strict=False).lang if found else "en"
+    i = 1 if lang == "zh" else 0
+    if args.ids:
+        unknown = [x for x in args.ids if x not in {e.id for e in library.ENTRIES}]
+        if unknown:
+            raise UserError(f"no such library rule: {', '.join(unknown)}. Run `picspec rules` to list them.")
+        text = dumps(library.compose(args.ids, lang))
+        print(text.split("---\n", 2)[2].strip("\n"))  # the sections, without the front matter
+        return 0
+    for key, titles in library.CATEGORIES.items():
+        chosen = library.entries(key, args.status) if args.category in (None, key) else []
+        if not chosen:
+            continue
+        print(f"{titles[i]}  [{key}]")
+        for e in chosen:
+            flags = library.STATUSES[e.status][i] + ("" if e.level == "must" else ", " + ("尽量" if i else "should"))
+            print(f"  {e.id:<20} {e.text[i]}  ({flags})")
+            if e.note[i]:
+                print(f"  {'':<20} {'注' if i else 'note'}: {e.note[i]}")
+        print()
+    print("把规则加进规格：picspec rules 规则名 ...，把输出粘贴进 PICSPEC.md" if i else
+          "To use rules: picspec rules ID ... and paste the output into PICSPEC.md")
     return 0
 
 
@@ -357,7 +391,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("path", nargs="?", default=".", help="folder or file to write (default: this folder)")
     p.add_argument("--lang", choices=("zh", "en"), default="en", help="language of the starter file")
     p.add_argument("--force", action="store_true", help="overwrite an existing file")
+    p.add_argument("--template", choices=("starter", *library.TEMPLATES), default="starter",
+                   help="which starter spec to write (default: starter)")
     p.set_defaults(func=cmd_init)
+
+    p = sub.add_parser("rules", help="browse the library of ready-made rules, or print some to paste into a spec")
+    p.add_argument("ids", nargs="*", help="library rule ids to print as spec text")
+    p.add_argument("--category", choices=tuple(library.CATEGORIES), help="list one category only")
+    p.add_argument("--status", choices=tuple(library.STATUSES), help="list rules with this judge status only")
+    p.add_argument("--lang", choices=("zh", "en"), help="language (default: that of the nearest spec, else en)")
+    p.set_defaults(func=cmd_rules)
 
     p = sub.add_parser("lint", help="list the rules and report problems in the spec")
     p.add_argument("spec", nargs="?", help=f"spec file (default: nearest {SPEC_FILENAME})")

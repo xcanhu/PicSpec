@@ -28,6 +28,10 @@ Reply with JSON only, in this shape, with one entry per question and the same id
 _CROP_NOTE = ("Two images are attached. The first is the whole image. The second is a crop from its centre "
               "at full resolution: use it for fine detail such as grain, noise and sharpness.")
 
+_REF_NOTE = ("Reference images follow the image under inspection. Each belongs to one question: compare the inspected "
+             "image with it for that question only, and never treat a reference as the image being judged.")
+MAX_REFERENCES = 6
+
 _YES = {"yes", "y", "true", "是", "有", "对"}
 _NO = {"no", "n", "false", "否", "没有", "不是", "无"}
 _NA = {"na", "n/a", "not applicable", "不适用", "无关"}
@@ -91,14 +95,34 @@ def _views(image: Image.Image, rules: list[Rule], crop: int = 768) -> list[Image
     return views
 
 
-def _ask(image: Image.Image, rules: list[Rule], judge: ChatModel, lang: str) -> dict[str, tuple[str, str]]:
+def _references(rules: list[Rule], spec: Spec) -> list[tuple[Rule, str, Image.Image]]:
+    """Reference images the judge should compare against: (rule, note, image), files that exist only."""
+    found: list[tuple[Rule, str, Image.Image]] = []
+    for r in rules:
+        for ref in r.refs:
+            if len(found) == MAX_REFERENCES:
+                return found
+            try:
+                found.append((r, ref.note, Image.open(spec.ref_path(ref)).convert("RGB")))
+            except OSError:
+                continue
+    return found
+
+
+def _ask(image: Image.Image, rules: list[Rule], judge: ChatModel, spec: Spec) -> dict[str, tuple[str, str]]:
+    lang = spec.lang
     views = _views(image, rules)
+    refs = _references(rules, spec)
     questions = [{"id": r.id, "question": r.question(lang), **({"condition": r.when} if r.when else {})}
                  for r in rules]
     user = ("Questions:\n" + json.dumps(questions, ensure_ascii=False, indent=1)
             + ("\n\n" + _CROP_NOTE if len(views) > 1 else ""))
+    if refs:
+        lines = [f"- image {len(views) + n}: reference for question {r.id}" + (f" ({note})" if note else "")
+                 for n, (r, note, _) in enumerate(refs, 1)]
+        user += "\n\n" + _REF_NOTE + "\n" + "\n".join(lines)
     try:
-        data = extract_json(judge.chat(_SYSTEM, user, images=views))
+        data = extract_json(judge.chat(_SYSTEM, user, images=views + [im for _, _, im in refs]))
     except ValueError:
         return {}
     answers = data.get("answers") if isinstance(data, dict) else None
@@ -123,10 +147,10 @@ def check_image(image: Image.Image, spec: Spec, judge: ChatModel, *, only: Itera
     batches = [[r] for r in rules] if one_by_one else [rules]
     answers: dict[str, tuple[str, str]] = {}
     for batch in batches:
-        got = _ask(image, batch, judge, spec.lang)
+        got = _ask(image, batch, judge, spec)
         missing = [r for r in batch if r.id not in got]
         if missing and not one_by_one and len(batch) > 1:
-            got.update(_ask(image, missing, judge, spec.lang))  # ask again for the ones the reply skipped
+            got.update(_ask(image, missing, judge, spec))  # ask again for the ones the reply skipped
         answers.update(got)
 
     report = Report()

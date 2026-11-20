@@ -29,7 +29,7 @@ Natural-light documentary portraits with the look of 35mm film.
   - expect: no
 ```
 
-> **Status: v0.4, early.** Working today: the spec format, the gpt-image-2 and ComfyUI adapters, checking each rule on the result with a vision model, and repairing the best image by editing it. Learning rules from your feedback is next: see the [roadmap](#roadmap).
+> **Status: v0.5, early.** Working today: the spec format, the gpt-image-2 and ComfyUI adapters, checking each rule on the result with a vision model, and repairing the best image by editing it. Learning rules from your feedback is next: see the [roadmap](#roadmap).
 
 ## First live results
 
@@ -85,7 +85,8 @@ picspec check photo.png                          # check an image you already ha
 
 | Command | What it does |
 | --- | --- |
-| `picspec init [path]` | Create a starter `PICSPEC.md` |
+| `picspec init [path] [--template NAME]` | Create a starter `PICSPEC.md` |
+| `picspec rules [id ...]` | Browse the rule library, or print rules to paste into a spec |
 | `picspec lint [spec]` | List every rule with its check question; report errors with line numbers |
 | `picspec fmt [spec]` | Rewrite the file in its standard layout and give every rule an id |
 | `picspec compile "prompt"` | Print the exact prompt, negative prompt and reference images for a backend |
@@ -95,6 +96,44 @@ picspec check photo.png                          # check an image you already ha
 | `picspec audit image.png --probe ...` | Test the judge: change images in known ways and see whether its answers follow |
 
 `compile` and `generate` take `--only t1,c1` and `--skip f2` to choose rules, `--size 1536x1024`, `--quality high`, and `--spec FILE`. Without `--spec`, PicSpec uses the `PICSPEC.md` in the current folder or the nearest parent folder, so one spec can cover a whole project.
+
+## Rule library and starter specs
+
+People want different things from generated images, so PicSpec ships a library of ready-made rules, grouped by what users ask for and complain about most:
+
+| Category | Examples | Rules |
+| --- | --- | --- |
+| Realism and texture | skin pores, film grain, no plastic skin, no oversaturation | 7 |
+| Expression and presence | natural expression, catchlight in the eyes, no staged smile | 6 |
+| Structure and physical defects | hands, limbs, warped objects, broken architecture | 7 |
+| Text in the image | no text, no overlaid captions, legible text | 3 |
+| Light, composition and lens | sharp face, shot size, facing direction, plain background | 18 |
+| Style and tone | photoreal, flat illustration, limited palette, no render look | 7 |
+| Consistency with a reference image | same face, same outfit, same place, same style | 5 |
+
+```bash
+picspec rules                          # list everything
+picspec rules --category expression    # one category
+picspec rules skin-texture bad-hands   # print these as spec text, ready to paste
+```
+
+Every entry carries an honest label for how far a vision model can be trusted to check it: **judge verified** (the judge followed synthetic changes in a live audit: 4 rules so far), **judge unreliable** (it failed one: plastic skin, same face), or **untested** (everything else). An untested rule still shapes the prompt; treat its pass or fail as a hint until it has been audited.
+
+`picspec init --template NAME` writes a starter spec built from the library:
+
+| Template | For |
+| --- | --- |
+| `starter` (default) | A film-look documentary portrait, the example at the top of this page |
+| `portrait` | Realistic portraits: skin texture, natural expression, no beautified faces |
+| `product` | Shop listing photos: whole product, plain background, no colour cast |
+| `illustration` | Flat illustration: limited palette, clean lines, no photographic shading |
+| `drama-character` | AI short drama character sheet: one character, full body, neutral pose, plain background |
+| `drama-scene` | AI short drama setting or building: wide empty shot, straight verticals, no broken architecture |
+| `drama-shot` | AI short drama keyframe (9:16): face, outfit, setting, light and style must match your reference images |
+
+### Consistency across images
+
+A rule that has a `ref` image is checked against that image: the judge receives the reference next to the result, so a question such as "Is the person's face the same person as in the reference image?" works. The `drama-shot` template expects `refs/character.png` and `refs/scene.png` next to the spec, which you make first with the other two drama templates. Face drift between shots is the complaint that production guides for AI short dramas raise most often; these comparison rules are new. In a first trial of 7 image pairs the judge was right on every pair that really matched, but called 3 of 3 different generated faces the same person, so treat a pass on `same-face` with caution. A dedicated face-comparison model is the planned fix.
 
 ## Checking and retrying
 
@@ -213,7 +252,7 @@ A backend is a small class: it declares what it supports (reference images, nega
 2. **Check and repair.** Done. Next here: measure how often the judge agrees with people, and compare editing against generating again.
 3. **Learn from feedback.** Say "the face is too blurry" and PicSpec proposes a new or changed rule for you to approve.
 4. **More ways to use it.** MCP server, ComfyUI node, reference images for local models, before/after galleries.
-5. **Benchmark.** How well image models follow fine-grained look instructions such as grain, sharpness and motion direction.
+5. **Benchmark.** For every category in the rule library: how well image models follow the rule, and how well a vision model can check it.
 
 ## License
 

@@ -39,7 +39,7 @@ class FakeJudge:
         self.script, self.calls = list(script), []
 
     def chat(self, system, user, images=None):
-        questions = json.loads(user.split("Questions:\n", 1)[1].split("\n\nTwo images")[0])
+        questions = json.JSONDecoder().raw_decode(user.split("Questions:\n", 1)[1])[0]
         self.calls.append({"questions": questions, "images": images, "user": user})
         step = self.script.pop(0) if len(self.script) > 1 else self.script[0]
         if isinstance(step, str):
@@ -251,3 +251,21 @@ def test_cli_check_needs_a_judge(project, capsys):
     IMG.save(project / "a.png")
     assert main(["check", "a.png"]) == 2
     assert "--judge" in capsys.readouterr().err
+
+
+def test_reference_images_are_sent_to_the_judge(tmp_path):
+    Image.new("RGB", (32, 32), "red").save(tmp_path / "hero.png")
+    spec_file = tmp_path / "PICSPEC.md"
+    spec_file.write_text("- `same` Same face as the reference\n  - check: Is it the same person as the reference?\n"
+                         "  - ref: hero.png | the lead character\n  - ref: missing.png\n"
+                         "- `g` Grain\n  - check: Grain?\n", encoding="utf-8")
+    from picspec import load
+    spec = load(spec_file, strict=False)
+    judge = FakeJudge({"same": "yes", "g": "yes"})
+    assert check_image(IMG, spec, judge).ok
+    call = judge.calls[0]
+    assert len(call["images"]) == 2 and call["images"][1].getpixel((0, 0)) == (255, 0, 0)
+    assert "image 2: reference for question same (the lead character)" in call["user"]
+    judge = FakeJudge({"g": "yes"})
+    check_image(IMG, spec, judge, only=["g"])
+    assert len(judge.calls[0]["images"]) == 1 and "Reference images" not in judge.calls[0]["user"]
