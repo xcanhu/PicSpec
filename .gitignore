@@ -4,3 +4,7 @@ __pycache__/
 .venv/
 picspec-out/
 .picspec-learn.json
+
+# local experiment output
+live-test/
+picspec-bench/
