@@ -84,7 +84,7 @@ What this shows so far:
 - The waist-up framing rule failed in all seven images, whether stressed or edited. Prompt wording alone does not move this model on it.
 - The one edit repair made things worse: asked to fix two rules while keeping the rest, it fixed neither, lost the grain and shifted the colours. Editing one rule at a time, and cropping for framing rules, are the next things to try.
 - The judges were consistent: the two judge models agreed on 20 of 21 verdicts on the run 1 images, and a person agreed with the judge on the bare-prompt and best images of both runs. Asking one rule per request flipped one more verdict, on skin texture.
-- Each image took 45 to 65 seconds including its check. The ComfyUI adapter has not been run against a live server yet.
+- Each image took 45 to 65 seconds including its check.
 
 ## Install
 
